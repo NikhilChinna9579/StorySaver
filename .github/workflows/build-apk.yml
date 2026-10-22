@@ -142,6 +142,12 @@ jobs:
           FRAG="+frag_keyframe+empty_moov+default_base_moof"
           ffmpeg -loglevel error -f lavfi -i "testsrc=duration=6:size=640x360:rate=30" -c:v libx264 -pix_fmt yuv420p -an -movflags $FRAG -y fixtures/yt-video.mp4
           ffmpeg -loglevel error -f lavfi -i "sine=frequency=440:duration=6" -c:a aac -b:a 128k -vn -movflags $FRAG -y fixtures/yt-audio.m4a
+          # Trim fixtures: 10 s, keyframe every second, with sound; a rotated copy; plain AAC audio
+          ffmpeg -loglevel error -f lavfi -i "testsrc=duration=10:size=640x360:rate=30" -f lavfi -i "sine=frequency=440:duration=10" \
+            -c:v libx264 -g 30 -keyint_min 30 -sc_threshold 0 -pix_fmt yuv420p -c:a aac -b:a 128k -shortest -movflags +faststart -y fixtures/trim-src.mp4
+          ffmpeg -loglevel error -display_rotation 90 -i fixtures/trim-src.mp4 -c copy -y fixtures/trim-rot.mp4 \
+            || ffmpeg -loglevel error -i fixtures/trim-src.mp4 -c copy -metadata:s:v:0 rotate=90 -y fixtures/trim-rot.mp4 || true
+          ffmpeg -loglevel error -f lavfi -i "sine=frequency=440:duration=10" -c:a aac -b:a 128k -y fixtures/trim-src.m4a
           ls -la fixtures
 
       - name: Run on emulator

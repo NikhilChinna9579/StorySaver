@@ -41,6 +41,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import com.storysaver.app.share.youTubePreview
+import com.storysaver.app.ui.trim.TrimButton
+import com.storysaver.app.ui.trim.TrimDialog
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
@@ -131,7 +137,8 @@ fun YouTubeScreen(vm: YouTubeViewModel, onBack: () -> Unit) {
             val video = state.video
             when {
                 state.resolving -> ProgressBlock("Looking up the video…", null, onCancel = vm::cancel)
-                video != null -> VideoCard(video, state, vm, onDownload = { askNotifications(); vm.download() })
+                video != null -> VideoCard(video, state, vm, onDownload = { askNotifications(); vm.download() },
+                    onTrimmed = { range -> askNotifications(); vm.download(range) })
                 state.error == null -> MessageBanner(
                     BannerKind.INFO, "How to use",
                     "In YouTube, open a video → Share → Copy link, then tap Paste here. Pick a resolution and tap " +
@@ -145,8 +152,21 @@ fun YouTubeScreen(vm: YouTubeViewModel, onBack: () -> Unit) {
 }
 
 @Composable
-private fun VideoCard(video: YtVideo, state: YtUiState, vm: YouTubeViewModel, onDownload: () -> Unit) {
+private fun VideoCard(
+    video: YtVideo, state: YtUiState, vm: YouTubeViewModel, onDownload: () -> Unit,
+    onTrimmed: (com.storysaver.app.media.TrimRange?) -> Unit,
+) {
     val job = state.job
+    var trimming by remember { mutableStateOf(false) }
+    val selected = state.selected
+    if (trimming && selected != null) {
+        TrimDialog(
+            source = youTubePreview(video, selected),
+            confirmLabel = if (selected.audioOnly) "Download audio clip" else "Download ${selected.label} clip",
+            onDismiss = { trimming = false },
+            onConfirm = { range, _ -> trimming = false; onTrimmed(range) },
+        )
+    }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         MediaThumb(
             model = video.thumbnailUrl ?: "", isVideo = true, contentScale = ContentScale.Crop,
@@ -170,12 +190,15 @@ private fun VideoCard(video: YtVideo, state: YtUiState, vm: YouTubeViewModel, on
         }
 
         when (job) {
-            YtJob.Ready -> Button(
-                onClick = onDownload, enabled = state.selected != null,
-                modifier = Modifier.fillMaxWidth().height(52.dp).testTag("yt_download"),
-            ) {
-                Icon(Icons.Outlined.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp)); Text("Download ${state.selected?.label ?: ""}")
+            YtJob.Ready -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Button(
+                    onClick = onDownload, enabled = state.selected != null,
+                    modifier = Modifier.weight(1f).height(52.dp).testTag("yt_download"),
+                ) {
+                    Icon(Icons.Outlined.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp)); Text("Download ${state.selected?.label ?: ""}")
+                }
+                TrimButton({ trimming = true }, Modifier.height(52.dp).testTag("yt_trim"), enabled = state.selected != null)
             }
             is YtJob.Working -> ProgressBlock("${job.step}…", job.progress, onCancel = vm::cancel,
                 modifier = Modifier.testTag("yt_progress"))

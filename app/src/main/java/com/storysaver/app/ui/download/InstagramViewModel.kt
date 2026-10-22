@@ -13,6 +13,7 @@ import java.util.UUID
 import com.storysaver.app.instagram.IgMediaItem
 import com.storysaver.app.instagram.IgPost
 import com.storysaver.app.instagram.InstagramExtractor
+import com.storysaver.app.media.TrimRange
 import com.storysaver.app.model.Platform
 import com.storysaver.app.model.SavedMedia
 import com.storysaver.app.util.FileNaming
@@ -71,6 +72,7 @@ class InstagramViewModel(private val c: AppContainer) : ViewModel() {
     /** Items waiting for the Android 8–9 storage permission. */
     private var pendingSave: List<Int> = emptyList()
     private var pendingAudioOnly = false
+    private var pendingTrim: TrimRange? = null
     private val jobIds = mutableMapOf<Int, UUID>()
 
     init {
@@ -157,7 +159,7 @@ class InstagramViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 
-    fun save(index: Int, audioOnly: Boolean = false) = startSaving(listOf(index), audioOnly)
+    fun save(index: Int, audioOnly: Boolean = false, trim: TrimRange? = null) = startSaving(listOf(index), audioOnly, trim)
 
     fun saveAll() {
         val found = _state.value.phase as? IgPhase.Found ?: return
@@ -165,11 +167,12 @@ class InstagramViewModel(private val c: AppContainer) : ViewModel() {
     }
 
     /** Hands each item to a background download; the screen just mirrors its progress. */
-    private fun startSaving(indices: List<Int>, audioOnly: Boolean) {
+    private fun startSaving(indices: List<Int>, audioOnly: Boolean, trim: TrimRange? = null) {
         if (indices.isEmpty()) return
         if (c.saver.needsLegacyPermission()) {
             pendingSave = indices
             pendingAudioOnly = audioOnly
+            pendingTrim = trim
             _state.update { it.copy(requestStoragePermission = true) }
             return
         }
@@ -179,9 +182,11 @@ class InstagramViewModel(private val c: AppContainer) : ViewModel() {
             if (ui.state is IgItemState.Downloading || ui.state is IgItemState.Saving) continue
             val owner = found.post.owner?.let { "@$it" } ?: "Instagram"
             val part = if (found.items.size > 1) " (${index + 1}/${found.items.size})" else ""
-            val title = owner + part + if (audioOnly) " · audio" else " · ${ui.item.type.label.lowercase()}"
+            val clip = trim?.takeIf { ui.item.type == com.storysaver.app.model.MediaType.VIDEO }
+            val title = owner + part + (if (audioOnly) " · audio" else " · ${ui.item.type.label.lowercase()}") +
+                if (clip != null) " · clip" else ""
             val fileBase = FileNaming.instagramBase(found.post.owner, found.post.shortcode, index, found.items.size, audioOnly)
-            val id = c.jobs.enqueue(DownloadRequest.Direct(ui.item.url, title, Platform.INSTAGRAM, audioOnly, fileBase))
+            val id = c.jobs.enqueue(DownloadRequest.Direct(ui.item.url, title, Platform.INSTAGRAM, audioOnly, fileBase, clip))
             jobIds[index] = id
             setItem(index, IgItemState.Downloading(null))
             viewModelScope.launch {
@@ -208,7 +213,7 @@ class InstagramViewModel(private val c: AppContainer) : ViewModel() {
         _state.update { it.copy(requestStoragePermission = false) }
         val pending = pendingSave
         pendingSave = emptyList()
-        if (granted) startSaving(pending, pendingAudioOnly) else _state.update {
+        if (granted) startSaving(pending, pendingAudioOnly, pendingTrim) else _state.update {
             it.copy(error = "Storage permission is needed on Android 9 and older to save into your gallery. " +
                 "Alternatively, choose a custom folder in Settings.")
         }

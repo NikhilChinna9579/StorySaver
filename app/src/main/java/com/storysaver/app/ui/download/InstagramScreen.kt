@@ -45,6 +45,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
@@ -64,7 +67,12 @@ import com.storysaver.app.ui.components.rememberNotificationPermissionAsker
 import com.storysaver.app.ui.components.MediaThumb
 import com.storysaver.app.ui.components.MessageBanner
 import com.storysaver.app.ui.components.ProgressBlock
+import com.storysaver.app.instagram.InstagramExtractor
 import com.storysaver.app.ui.theme.Accents
+import com.storysaver.app.ui.trim.TrimDialog
+import com.storysaver.app.ui.trim.TrimSource
+import androidx.compose.material.icons.outlined.ContentCut
+import androidx.compose.material3.TextButton
 
 @Composable
 fun InstagramScreen(vm: InstagramViewModel, onBack: () -> Unit) {
@@ -74,6 +82,17 @@ fun InstagramScreen(vm: InstagramViewModel, onBack: () -> Unit) {
     val askNotifications = rememberNotificationPermissionAsker()
 
     LegacyStoragePermissionEffect(state.requestStoragePermission, vm::onStoragePermissionResult)
+    var trimIndex by remember { mutableStateOf<Int?>(null) }
+    val trimItem = (state.phase as? IgPhase.Found)?.items?.firstOrNull { it.item.index == trimIndex }?.item
+    if (trimItem != null) {
+        TrimDialog(
+            source = TrimSource(trimItem.url, userAgent = InstagramExtractor.APP_UA),
+            confirmLabel = "Download clip",
+            offerAudioChoice = true,
+            onDismiss = { trimIndex = null },
+            onConfirm = { range, audio -> trimIndex = null; askNotifications(); vm.save(trimItem.index, audio, range) },
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -145,6 +164,7 @@ fun InstagramScreen(vm: InstagramViewModel, onBack: () -> Unit) {
                     phase,
                     onSave = { i, audio -> askNotifications(); vm.save(i, audio) },
                     onSaveAll = { askNotifications(); vm.saveAll() },
+                    onTrim = { i -> trimIndex = i },
                     onCancel = vm::cancel,
                 )
             }
@@ -153,7 +173,9 @@ fun InstagramScreen(vm: InstagramViewModel, onBack: () -> Unit) {
 }
 
 @Composable
-private fun FoundPost(found: IgPhase.Found, onSave: (Int, Boolean) -> Unit, onSaveAll: () -> Unit, onCancel: () -> Unit) {
+private fun FoundPost(
+    found: IgPhase.Found, onSave: (Int, Boolean) -> Unit, onSaveAll: () -> Unit, onTrim: (Int) -> Unit, onCancel: () -> Unit,
+) {
     val items = found.items
     val images = items.count { it.item.type == MediaType.IMAGE }
     val videos = items.size - images
@@ -182,7 +204,7 @@ private fun FoundPost(found: IgPhase.Found, onSave: (Int, Boolean) -> Unit, onSa
         }
         items.forEach { ui ->
             ItemCard(
-                ui, onSave = { audio -> onSave(ui.item.index, audio) }, onCancel = onCancel,
+                ui, onSave = { audio -> onSave(ui.item.index, audio) }, onTrim = { onTrim(ui.item.index) }, onCancel = onCancel,
                 label = if (items.size > 1) "${ui.item.index + 1}/${items.size}" else null, enabled = !anyActive,
             )
         }
@@ -190,7 +212,9 @@ private fun FoundPost(found: IgPhase.Found, onSave: (Int, Boolean) -> Unit, onSa
 }
 
 @Composable
-private fun ItemCard(ui: IgItemUi, onSave: (audioOnly: Boolean) -> Unit, onCancel: () -> Unit, label: String?, enabled: Boolean) {
+private fun ItemCard(
+    ui: IgItemUi, onSave: (audioOnly: Boolean) -> Unit, onTrim: () -> Unit, onCancel: () -> Unit, label: String?, enabled: Boolean,
+) {
     val context = LocalContext.current
     val item = ui.item
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
@@ -206,21 +230,29 @@ private fun ItemCard(ui: IgItemUi, onSave: (audioOnly: Boolean) -> Unit, onCance
                 style = MaterialTheme.typography.labelLarge,
             )
             when (val s = ui.state) {
-                IgItemState.Ready -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(
-                        onClick = { onSave(false) }, enabled = enabled,
-                        modifier = Modifier.weight(1f).height(50.dp).testTag("ig_save_${item.index}"),
-                    ) {
-                        Icon(Icons.Outlined.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp)); Text("Save ${item.type.label.lowercase()}")
+                IgItemState.Ready -> Column {
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Button(
+                            onClick = { onSave(false) }, enabled = enabled,
+                            modifier = Modifier.weight(1f).height(50.dp).testTag("ig_save_${item.index}"),
+                        ) {
+                            Icon(Icons.Outlined.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp)); Text("Save ${item.type.label.lowercase()}")
+                        }
+                        if (item.type == MediaType.VIDEO) {
+                            OutlinedButton(
+                                onClick = { onSave(true) }, enabled = enabled,
+                                modifier = Modifier.weight(1f).height(50.dp).testTag("ig_audio_${item.index}"),
+                            ) {
+                                Icon(Icons.Outlined.MusicNote, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp)); Text("Audio only")
+                            }
+                        }
                     }
                     if (item.type == MediaType.VIDEO) {
-                        OutlinedButton(
-                            onClick = { onSave(true) }, enabled = enabled,
-                            modifier = Modifier.weight(1f).height(50.dp).testTag("ig_audio_${item.index}"),
-                        ) {
-                            Icon(Icons.Outlined.MusicNote, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp)); Text("Audio only")
+                        TextButton(onClick = onTrim, enabled = enabled, modifier = Modifier.testTag("ig_trim_${item.index}")) {
+                            Icon(Icons.Outlined.ContentCut, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp)); Text("Trim — save only a part")
                         }
                     }
                 }

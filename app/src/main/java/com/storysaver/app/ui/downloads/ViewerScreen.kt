@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.ContentCut
 import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Share
@@ -54,12 +55,29 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import com.storysaver.app.model.SavedMedia
+import com.storysaver.app.media.TrimRange
 import com.storysaver.app.ui.MediaIntents
+import com.storysaver.app.ui.trim.TrimDialog
+import com.storysaver.app.ui.trim.TrimSource
 
 /** Full-screen in-app viewer: plays videos and audio, shows images with pinch-to-zoom. */
 @Composable
-fun ViewerScreen(media: SavedMedia?, onBack: () -> Unit) {
+fun ViewerScreen(
+    media: SavedMedia?, onBack: () -> Unit,
+    onSaveClip: (media: SavedMedia, range: TrimRange?, audioOnly: Boolean) -> Unit = { _, _, _ -> },
+) {
     val context = LocalContext.current
+    var trimming by remember { mutableStateOf(false) }
+    val trimmable = media != null && TrimRange.canTrim(media.mimeType)
+    if (trimming && media != null) {
+        TrimDialog(
+            source = TrimSource(media.uri, showVideo = !media.isAudio),
+            confirmLabel = "Save clip",
+            offerAudioChoice = !media.isAudio,
+            onDismiss = { trimming = false },
+            onConfirm = { range, audio -> trimming = false; onSaveClip(media, range, audio) },
+        )
+    }
     Scaffold(
         containerColor = Color.Black,
         topBar = {
@@ -69,6 +87,11 @@ fun ViewerScreen(media: SavedMedia?, onBack: () -> Unit) {
                 actions = {
                     if (media != null) {
                         val uri = Uri.parse(media.uri)
+                        if (trimmable) {
+                            IconButton(onClick = { trimming = true }, modifier = Modifier.testTag("viewer_trim")) {
+                                Icon(Icons.Outlined.ContentCut, "Trim")
+                            }
+                        }
                         IconButton(onClick = { MediaIntents.share(context, uri, media.mimeType) }) { Icon(Icons.Outlined.Share, "Share") }
                         IconButton(onClick = { MediaIntents.open(context, uri, media.mimeType) }) { Icon(Icons.Outlined.OpenInNew, "Open with") }
                     }
@@ -80,6 +103,7 @@ fun ViewerScreen(media: SavedMedia?, onBack: () -> Unit) {
             when {
                 media == null -> Text("This file is no longer in your downloads.", color = Color.White)
                 media.mimeType.startsWith("image/") -> ZoomableImage(Uri.parse(media.uri))
+                trimming -> Unit // the trim screen has its own player
                 else -> Player(Uri.parse(media.uri), audio = media.isAudio)
             }
         }

@@ -15,6 +15,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -159,7 +160,9 @@ fun StorySaverNavHost(container: AppContainer) {
             composable(Routes.VIEWER, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
                 val id = entry.arguments?.getString("id")
                 val items by container.history.items.collectAsStateWithLifecycle()
-                ViewerScreen(items.firstOrNull { it.id == id }, onBack = { nav.popBackStack() })
+                val ctx = LocalContext.current
+                ViewerScreen(items.firstOrNull { it.id == id }, onBack = { nav.popBackStack() },
+                    onSaveClip = { m, range, audio -> saveClip(ctx, container, m, range, audio) })
             }
             composable(Routes.SHARED) {
                 val vm: LocalSaveViewModel = viewModel(factory = viewModelFactory {
@@ -180,4 +183,25 @@ private fun NavHostController.switchTab(route: String) {
         launchSingleTop = true
         restoreState = true
     }
+}
+
+/** Saves a trimmed (and/or audio-only) copy of a file from Downloads, in the background. */
+private fun saveClip(
+    context: android.content.Context, c: com.storysaver.app.AppContainer, m: com.storysaver.app.model.SavedMedia,
+    range: com.storysaver.app.media.TrimRange?, audioOnly: Boolean,
+) {
+    val extractAudio = audioOnly && !m.isAudio
+    if (range == null && !extractAudio) {
+        android.widget.Toast.makeText(context, "Move the start or end to choose a part to save.", android.widget.Toast.LENGTH_LONG).show()
+        return
+    }
+    val stem = m.displayName.substringBeforeLast('.').ifBlank { "clip" }
+    c.jobs.enqueue(com.storysaver.app.downloads.DownloadRequest.Local(
+        uri = m.uri, mime = m.mimeType,
+        title = stem + (if (extractAudio) " · audio" else "") + if (range != null) " · clip" else "",
+        platform = m.source, audioOnly = extractAudio,
+        fileBase = stem + if (extractAudio) "_audio" else "",
+        trim = range,
+    ))
+    android.widget.Toast.makeText(context, "Saving the clip — it will appear in Downloads.", android.widget.Toast.LENGTH_LONG).show()
 }

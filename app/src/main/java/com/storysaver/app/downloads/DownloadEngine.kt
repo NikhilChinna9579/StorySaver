@@ -4,7 +4,9 @@ import android.net.Uri
 import com.storysaver.app.AppContainer
 import com.storysaver.app.data.DirectMediaDownloader
 import com.storysaver.app.data.MediaSaver
+import com.storysaver.app.media.MediaTrimmer
 import com.storysaver.app.model.SavedMedia
+import com.storysaver.app.util.FileNaming
 import com.storysaver.app.util.Progress
 import com.storysaver.app.util.formatBytes
 import com.storysaver.app.youtube.ChunkedDownloader
@@ -32,12 +34,31 @@ class DownloadEngine(private val c: AppContainer) {
         val temps = mutableListOf<File>()
         fun temp(name: String) = File(dir, "${stamp}_$name").also { temps += it }
         try {
-            val (file, mime) = when (request) {
+            var (file, mime) = when (request) {
                 is DownloadRequest.Direct -> direct(request, ::temp, progress)
                 is DownloadRequest.YouTube -> youtube(request, dir, ::temp, progress)
+                is DownloadRequest.Local -> local(request, ::temp, progress)
+            }
+            var fileBase = request.fileBase
+            val trim = request.trim
+            if (trim != null && (mime.startsWith("video/") || mime.startsWith("audio/"))) {
+                progress("Trimming", 0f)
+                val audio = request.audioOnly || mime.startsWith("audio/")
+                val clip = temp(if (audio) "clip.m4a" else "clip.mp4")
+                val result = try {
+                    withContext(Dispatchers.IO) {
+                        MediaTrimmer.trim(file, clip, trim, audioOnly = audio) { p -> progress("Trimming", p) }
+                    }
+                } catch (e: IOException) {
+                    throw DownloadFailure("Couldn't cut the clip: ${e.message ?: "unsupported file"}")
+                }
+                file.delete()
+                file = clip
+                mime = result.mime
+                fileBase = FileNaming.withClip(fileBase, trim)
             }
             progress("Saving", null)
-            return when (val out = c.saver.save(Uri.fromFile(file), mime, request.platform, request.fileBase) { p -> progress("Saving", p) }) {
+            return when (val out = c.saver.save(Uri.fromFile(file), mime, request.platform, fileBase) { p -> progress("Saving", p) }) {
                 is MediaSaver.Outcome.Saved -> out.media.also { c.history.add(it) }
                 is MediaSaver.Outcome.Failed -> throw DownloadFailure(out.message)
                 MediaSaver.Outcome.NeedsStoragePermission ->
@@ -128,6 +149,30 @@ class DownloadEngine(private val c: AppContainer) {
         withContext(Dispatchers.IO) { Mp4Merger.merge(v, a, out, durationUs) { p -> progress("Merging video and audio", p) } }
         v.delete(); a.delete()
         return out to "video/mp4"
+    }
+
+    /** A file already on the phone: copy it (content:// can't be read as a File), extract audio if asked. */
+    private suspend fun local(
+        r: DownloadRequest.Local, temp: (String) -> File, progress: (String, Float?) -> Unit,
+    ): Pair<File, String> {
+        progress("Reading", null)
+        val src = temp("local")
+        val gone = "The original file can't be read any more. It may have been deleted."
+        try {
+            withContext(Dispatchers.IO) {
+                c.appContext.contentResolver.openInputStream(Uri.parse(r.uri))?.use { i -> src.outputStream().use { o -> i.copyTo(o) } }
+                    ?: throw DownloadFailure(gone)
+            }
+        } catch (e: java.io.FileNotFoundException) {
+            throw DownloadFailure(gone)
+        } catch (e: SecurityException) {
+            throw DownloadFailure(gone)
+        }
+        if (!r.audioOnly || !r.mime.startsWith("video/")) return src to r.mime
+        val out = temp("audio.m4a")
+        progress("Extracting audio", 0f)
+        withContext(Dispatchers.IO) { Mp4Merger.extractAudio(src, out, 0) { p -> progress("Extracting audio", p) } }
+        return out to "audio/mp4"
     }
 
     private suspend fun copyToTemp(src: File, dest: File): File = withContext(Dispatchers.IO) {

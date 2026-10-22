@@ -67,4 +67,14 @@ class ReadableNamesTest {
         val old = """{"kind":"direct","url":"https://x/a.mp4","title":"t","platform":"INSTAGRAM"}""" // queued by v1.2
         assertEquals(null, DownloadRequest.fromJson(old)!!.fileBase)
     }
+
+    @Test fun clipNames() {
+        val r = com.storysaver.app.media.TrimRange(5_000, 20_000)
+        assertEquals("ndtv_instagram_DeyQf_PzHlD_clip_0m05s-0m20s", FileNaming.withClip("ndtv_instagram_DeyQf_PzHlD", r))
+        assertEquals("Me at the zoo - jawed (360p) clip 0m05s-0m20s", FileNaming.withClip("Me at the zoo - jawed (360p)", r))
+        assertEquals("ndtv_instagram_DeyQf_PzHlD", FileNaming.withClip("ndtv_instagram_DeyQf_PzHlD", null))
+        assertEquals(null, FileNaming.withClip(null, r))
+        assertEquals("ndtv_instagram_DeyQf_PzHlD_audio_clip_0m05s-0m20s.m4a",
+            FileNaming.readable(FileNaming.withClip("ndtv_instagram_DeyQf_PzHlD_audio", r), Platform.INSTAGRAM, "audio/mp4", t))
+    }
 }

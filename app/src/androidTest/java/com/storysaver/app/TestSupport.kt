@@ -4,6 +4,7 @@ import androidx.compose.ui.test.SemanticsNodeInteractionsProvider
 import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -45,4 +46,23 @@ fun ComposeTestRule.openSource(type: String, source: String) {
     onNodeWithText(type).performScrollTo().performClick()
     onNodeWithText(source).performScrollTo().performClick()
     onNodeWithText("Continue").performScrollTo().performClick()
+}
+
+/** The text shown by the node with [tag]. */
+fun SemanticsNodeInteractionsProvider.textOf(tag: String): String =
+    onAllNodesWithTag(tag, useUnmergedTree = true).fetchSemanticsNodes().firstOrNull()
+        ?.config?.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text)?.joinToString { it.text }.orEmpty()
+
+/** Waits until the trim screen has loaded the media (its end time is known). */
+fun ComposeTestRule.waitForTrimScreen(timeoutMs: Long = 60_000) {
+    waitUntil(timeoutMs) {
+        hasTag("trim_error") || (hasTag("trim_end") && textOf("trim_end").let { it.isNotEmpty() && it != "0:00.0" })
+    }
+    org.junit.Assert.assertFalse("trim preview failed to load", hasTag("trim_error"))
+}
+
+/** Taps the node with [tag] [times] times. */
+fun ComposeTestRule.tap(tag: String, times: Int = 1) = repeat(times) {
+    onNodeWithTag(tag).performClick()
+    waitForIdle()
 }

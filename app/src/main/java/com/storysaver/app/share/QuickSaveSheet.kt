@@ -41,6 +41,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -61,6 +64,8 @@ import com.storysaver.app.ui.components.MessageBanner
 import com.storysaver.app.ui.components.ProgressBlock
 import com.storysaver.app.ui.components.rememberNotificationPermissionAsker
 import com.storysaver.app.ui.theme.Accents
+import com.storysaver.app.ui.trim.TrimButton
+import com.storysaver.app.ui.trim.TrimDialog
 import com.storysaver.app.util.formatBytes
 import com.storysaver.app.youtube.YtQuality
 
@@ -73,6 +78,17 @@ fun QuickSaveSheet(vm: QuickSaveViewModel, onClose: () -> Unit, onOpenApp: () ->
     val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val askNotifications = rememberNotificationPermissionAsker()
     LegacyStoragePermissionEffect(state.requestStoragePermission, vm::onStoragePermissionResult)
+    var trimming by remember { mutableStateOf(false) }
+    val trimSource = vm.trimSource()
+
+    if (trimming && trimSource != null) {
+        TrimDialog(
+            source = trimSource,
+            confirmLabel = "Download clip",
+            onDismiss = { trimming = false },
+            onConfirm = { range, _ -> trimming = false; askNotifications(); vm.download(range) },
+        )
+    }
 
     ModalBottomSheet(onDismissRequest = onClose, sheetState = sheet) {
         Column(
@@ -101,6 +117,7 @@ fun QuickSaveSheet(vm: QuickSaveViewModel, onClose: () -> Unit, onOpenApp: () ->
                     progress,
                     onDownload = { askNotifications(); vm.download() },
                     downloadLabel = downloadLabel(state.content),
+                    onTrim = if (trimSource != null) ({ trimming = true }) else null,
                     onCancel = vm::cancel, onClose = onClose, onOpenApp = onOpenApp,
                 )
             }
@@ -233,19 +250,22 @@ private fun QsContent.Instagram.isAllVideoSelection() =
 
 @Composable
 private fun ProgressArea(
-    progress: QsProgress, onDownload: () -> Unit, downloadLabel: String,
+    progress: QsProgress, onDownload: () -> Unit, downloadLabel: String, onTrim: (() -> Unit)?,
     onCancel: () -> Unit, onClose: () -> Unit, onOpenApp: () -> Unit,
 ) {
     val context = LocalContext.current
     when (progress) {
         QsProgress.Idle, is QsProgress.Failed -> {
             if (progress is QsProgress.Failed) MessageBanner(BannerKind.ERROR, "Couldn't save", progress.message)
-            Button(
-                onClick = onDownload, enabled = !downloadLabel.startsWith("Select"),
-                modifier = Modifier.fillMaxWidth().height(54.dp).testTag("qs_download"),
-            ) {
-                Icon(Icons.Outlined.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp)); Text(if (progress is QsProgress.Failed) "Try again" else downloadLabel)
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Button(
+                    onClick = onDownload, enabled = !downloadLabel.startsWith("Select"),
+                    modifier = Modifier.weight(1f).height(54.dp).testTag("qs_download"),
+                ) {
+                    Icon(Icons.Outlined.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp)); Text(if (progress is QsProgress.Failed) "Try again" else downloadLabel)
+                }
+                if (onTrim != null) TrimButton(onTrim, Modifier.height(54.dp).testTag("qs_trim"))
             }
         }
         is QsProgress.Saving -> ProgressBlock("${progress.step}…", null)

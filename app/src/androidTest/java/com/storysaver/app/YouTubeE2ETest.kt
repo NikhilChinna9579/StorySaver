@@ -78,6 +78,28 @@ class YouTubeE2ETest {
         assertEquals("saved file must contain video AND audio", 2, tracks)
     }
 
+    /** Trim → only the chosen part is downloaded (skipped where YouTube blocks the network). */
+    @Test fun trimmedClipIsDownloaded() {
+        findVideo()
+        val before = savedIds()
+        rule.onNodeWithTag("yt_trim").performScrollTo().performClick()
+        rule.waitForTrimScreen()
+        rule.tap("trim_start_plus", 4)  // 2.0 s
+        rule.tap("trim_end_minus", 6)   // 3.0 s before the end
+        val start = com.storysaver.app.media.TrimRange.parseClock(rule.textOf("trim_start"))!!
+        val end = com.storysaver.app.media.TrimRange.parseClock(rule.textOf("trim_end"))!!
+        Shots.take("43_youtube_trim")
+        rule.onNodeWithTag("trim_confirm").performClick()
+        rule.waitUntil(240_000) { rule.hasTag("yt_saved") || rule.hasText("Download failed") }
+        assertTrue("trimmed YouTube download did not complete", rule.hasTag("yt_saved"))
+        val added = savedIds() - before
+        assertEquals(1, added.size)
+        val uri = Uri.withAppendedPath(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, added.single().toString())
+        val d = MediaQueries.durationMs(uri)
+        assertTrue("clip=$d chosen=${end - start}", d in (end - start - 400)..(end - start + 5_000) && d < 17_000)
+        assertTrue(MediaQueries.name(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, added.single())!!.contains("clip 0m02s-"))
+    }
+
     private fun savedIds(): Set<Long> {
         val resolver = InstrumentationRegistry.getInstrumentation().targetContext.contentResolver
         return resolver.query(

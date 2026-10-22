@@ -38,6 +38,17 @@ object MediaQueries {
 
     fun uri(collection: Uri, id: Long): Uri = Uri.withAppendedPath(collection, id.toString())
 
+    /** Duration in ms of a saved video/audio file. */
+    fun durationMs(uri: Uri): Long {
+        val mmr = android.media.MediaMetadataRetriever()
+        return try {
+            mmr.setDataSource(ctx, uri)
+            mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: -1
+        } finally {
+            mmr.release()
+        }
+    }
+
     /** MIME types of the tracks inside a saved file. */
     fun trackMimes(uri: Uri): List<String> {
         val ex = MediaExtractor()

@@ -96,6 +96,15 @@ object FileNaming {
         if (!audio && !quality.isNullOrBlank()) append(" (").append(quality).append(')')
     }
 
+    /**
+     * Marks a trimmed copy: "ndtv_instagram_DeyQf_PzHlD_clip_0m05s-0m20s",
+     * "Me at the zoo - jawed (360p) clip 0m05s-0m20s". Null/blank bases stay as they are.
+     */
+    fun withClip(base: String?, range: com.storysaver.app.media.TrimRange?): String? {
+        if (range == null || base.isNullOrBlank()) return base
+        return if (base.contains(' ')) "$base clip ${range.fileLabel()}" else "${base}_clip_${range.fileLabel()}"
+    }
+
     /** e.g. "WhatsApp_status_2026-10-22_14-03-11" (when the status was posted/received). */
     fun whatsappBase(statusTimeMillis: Long, timeZone: TimeZone = TimeZone.getDefault()): String {
         val fmt = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).apply { this.timeZone = timeZone }

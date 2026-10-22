@@ -10,6 +10,9 @@ import com.storysaver.app.downloads.DownloadRequest
 import com.storysaver.app.downloads.JobState
 import com.storysaver.app.instagram.IgPost
 import com.storysaver.app.instagram.InstagramExtractor
+import com.storysaver.app.media.MediaTrimmer
+import com.storysaver.app.media.TrimRange
+import com.storysaver.app.ui.trim.TrimSource
 import com.storysaver.app.model.MediaType
 import com.storysaver.app.model.Platform
 import com.storysaver.app.model.SavedMedia
@@ -82,6 +85,7 @@ class QuickSaveViewModel(input: ShareInput, private val c: AppContainer) : ViewM
     private val _state = MutableStateFlow(QsState(QsContent.Loading("Looking it up…")))
     val state: StateFlow<QsState> = _state.asStateFlow()
     private val jobIds = mutableListOf<UUID>()
+    private var pendingTrim: TrimRange? = null
 
     init {
         when (input) {
@@ -145,12 +149,29 @@ class QuickSaveViewModel(input: ShareInput, private val c: AppContainer) : ViewM
         s.copy(content = c.copy(selected = q))
     }
 
+    // ---- trim ----
+
+    /** What the trim screen should preview, or null when the current choice can't be trimmed. */
+    fun trimSource(): TrimSource? = when (val c = _state.value.content) {
+        is QsContent.Instagram -> {
+            val picked = c.post.items.filter { it.index in c.selected }
+            picked.singleOrNull()?.takeIf { it.type == MediaType.VIDEO }?.let {
+                TrimSource(it.url, userAgent = InstagramExtractor.APP_UA, showVideo = !c.audioOnly)
+            }
+        }
+        is QsContent.YouTube -> c.selected?.let { q -> youTubePreview(c.video, q) }
+        is QsContent.LocalFile ->
+            if (c.isVideo && TrimRange.canTrim(c.mime)) TrimSource(c.uri.toString(), showVideo = !c.audioOnly) else null
+        else -> null
+    }
+
     // ---- download ----
 
-    fun download() {
+    fun download(trim: TrimRange? = null) {
         val s = _state.value
         if (s.progress is QsProgress.Background || s.progress is QsProgress.Saving) return
         if (c.saver.needsLegacyPermission()) {
+            pendingTrim = trim
             _state.update { it.copy(requestStoragePermission = true) }
             return
         }
@@ -162,23 +183,28 @@ class QuickSaveViewModel(input: ShareInput, private val c: AppContainer) : ViewM
                 val requests = items.map { item ->
                     val audio = content.audioOnly && item.type == MediaType.VIDEO
                     val part = if (content.post.items.size > 1) " (${item.index + 1}/${content.post.items.size})" else ""
-                    DownloadRequest.Direct(item.url, owner + part + if (audio) " · audio" else " · ${item.type.label.lowercase()}",
+                    val clip = trim?.takeIf { item.type == MediaType.VIDEO }
+                    DownloadRequest.Direct(item.url,
+                        owner + part + (if (audio) " · audio" else " · ${item.type.label.lowercase()}") + if (clip != null) " · clip" else "",
                         Platform.INSTAGRAM, audio,
-                        FileNaming.instagramBase(content.post.owner, content.post.shortcode, item.index, content.post.items.size, audio))
+                        FileNaming.instagramBase(content.post.owner, content.post.shortcode, item.index, content.post.items.size, audio),
+                        trim = clip)
                 }
                 startBackground(requests)
             }
             is QsContent.YouTube -> {
                 val q = content.selected ?: return
                 startBackground(listOf(DownloadRequest.YouTube(
-                    title = if (q.audioOnly) "${content.video.title} · audio" else "${content.video.title} · ${q.label}",
+                    title = (if (q.audioOnly) "${content.video.title} · audio" else "${content.video.title} · ${q.label}") +
+                        if (trim != null) " · clip" else "",
                     videoUrl = q.video.url, audioUrl = q.audio?.url,
                     videoLength = q.video.contentLength, audioLength = q.audio?.contentLength ?: -1,
                     durationSeconds = content.video.durationSeconds, qualityLabel = q.label, audioOnly = q.audioOnly,
                     fileBase = FileNaming.youtubeBase(content.video.title, content.video.channel, q.label, q.audioOnly),
+                    trim = trim,
                 )))
             }
-            is QsContent.LocalFile -> saveLocal(content)
+            is QsContent.LocalFile -> saveLocal(content, trim?.takeIf { content.isVideo })
             else -> Unit
         }
     }
@@ -214,28 +240,38 @@ class QuickSaveViewModel(input: ShareInput, private val c: AppContainer) : ViewM
     }
 
     /** Files shared directly are copied right away (their access permission ends when the sheet closes). */
-    private fun saveLocal(f: QsContent.LocalFile) = viewModelScope.launch {
+    private fun saveLocal(f: QsContent.LocalFile, trim: TrimRange?) = viewModelScope.launch {
         _state.update { it.copy(progress = QsProgress.Saving("Saving")) }
-        var temp: File? = null
+        val temps = mutableListOf<File>()
         try {
-            val outcome = if (f.audioOnly && f.canExtractAudio) {
-                _state.update { it.copy(progress = QsProgress.Saving("Extracting audio")) }
+            val audio = f.audioOnly && f.canExtractAudio
+            val base = FileNaming.sharedBase(f.name, System.currentTimeMillis()) + if (audio) "_audio" else ""
+            val outcome = if (!audio && trim == null) {
+                c.saver.save(f.uri, f.mime, Platform.SHARED, base)
+            } else {
                 val dir = File(c.appContext.cacheDir, "jobs").apply { mkdirs() }
-                val src = File(dir, "share_${System.nanoTime()}.mp4").also { temp = it }
+                fun temp(ext: String) = File(dir, "share_${System.nanoTime()}.$ext").also { temps += it }
+                var file = temp("mp4")
                 withContext(Dispatchers.IO) {
-                    c.appContext.contentResolver.openInputStream(f.uri)?.use { i -> src.outputStream().use { o -> i.copyTo(o) } }
+                    c.appContext.contentResolver.openInputStream(f.uri)?.use { i -> file.outputStream().use { o -> i.copyTo(o) } }
                         ?: throw IOException("The shared file can't be read")
                 }
-                val audio = File(dir, "share_${System.nanoTime()}.m4a")
-                try {
-                    withContext(Dispatchers.IO) { Mp4Merger.extractAudio(src, audio, 0) {} }
-                    c.saver.save(Uri.fromFile(audio), "audio/mp4", Platform.SHARED,
-                        FileNaming.sharedBase(f.name, System.currentTimeMillis()) + "_audio")
-                } finally {
-                    audio.delete()
+                var mime = f.mime
+                if (audio) {
+                    _state.update { it.copy(progress = QsProgress.Saving("Extracting audio")) }
+                    val out = temp("m4a")
+                    withContext(Dispatchers.IO) { Mp4Merger.extractAudio(file, out, 0) {} }
+                    file = out
+                    mime = "audio/mp4"
                 }
-            } else {
-                c.saver.save(f.uri, f.mime, Platform.SHARED, FileNaming.sharedBase(f.name, System.currentTimeMillis()))
+                if (trim != null) {
+                    _state.update { it.copy(progress = QsProgress.Saving("Trimming")) }
+                    val out = temp(if (audio) "m4a" else "mp4")
+                    val r = withContext(Dispatchers.IO) { MediaTrimmer.trim(file, out, trim, audioOnly = audio) {} }
+                    file = out
+                    mime = r.mime
+                }
+                c.saver.save(Uri.fromFile(file), mime, Platform.SHARED, FileNaming.withClip(base, trim))
             }
             when (outcome) {
                 is MediaSaver.Outcome.Saved -> {
@@ -251,7 +287,7 @@ class QuickSaveViewModel(input: ShareInput, private val c: AppContainer) : ViewM
         } catch (e: IOException) {
             _state.update { it.copy(progress = QsProgress.Failed(e.message ?: "Couldn't save the file.")) }
         } finally {
-            temp?.delete()
+            temps.forEach { it.delete() }
         }
     }
 
@@ -261,8 +297,22 @@ class QuickSaveViewModel(input: ShareInput, private val c: AppContainer) : ViewM
 
     fun onStoragePermissionResult(granted: Boolean) {
         _state.update { it.copy(requestStoragePermission = false) }
-        if (granted) download() else _state.update {
+        if (granted) download(pendingTrim) else _state.update {
             it.copy(progress = QsProgress.Failed("Storage permission is needed on Android 9 and older to save into your gallery."))
         }
     }
+}
+
+/**
+ * Preview for trimming a YouTube download: the small combined (video+sound) stream when there is
+ * one — it loads fastest — otherwise the chosen streams played together.
+ */
+fun youTubePreview(video: YtVideo, q: YtQuality): TrimSource {
+    val ms = video.durationSeconds * 1000
+    if (q.audioOnly) {
+        return TrimSource(q.video.url, userAgent = YouTubeExtractor.userAgentFor(q.video.url), showVideo = false, knownDurationMs = ms)
+    }
+    val combined = video.qualities.filter { !it.audioOnly && it.audio == null }.minByOrNull { it.height }
+    val v = combined ?: q
+    return TrimSource(v.video.url, audioUrl = v.audio?.url, userAgent = YouTubeExtractor.userAgentFor(v.video.url), knownDurationMs = ms)
 }

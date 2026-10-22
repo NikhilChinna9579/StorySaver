@@ -37,8 +37,9 @@ FX=/sdcard/Android/data/$PKG/files/fixtures
 adb shell mkdir -p "$FX"
 adb push fixtures/yt-video.mp4 "$FX/yt-video.mp4"
 adb push fixtures/yt-audio.m4a "$FX/yt-audio.m4a"
+for f in trim-src.mp4 trim-rot.mp4 trim-src.m4a; do [ -f "fixtures/$f" ] && adb push "fixtures/$f" "$FX/$f"; done
 adb logcat -c
-for cls in SmokeTest Mp4MergerTest WhatsAppE2ETest InstagramE2ETest BackgroundDownloadE2ETest ShareSheetE2ETest HomeQuickLinkE2ETest YouTubeE2ETest DownloadsTabE2ETest; do
+for cls in SmokeTest Mp4MergerTest MediaTrimmerTest WhatsAppE2ETest InstagramE2ETest BackgroundDownloadE2ETest ShareSheetE2ETest HomeQuickLinkE2ETest YouTubeE2ETest TrimE2ETest DownloadsTabE2ETest; do
   echo "=== $cls" >> "$OUT/instrument.txt"
   adb shell am instrument -w -e class "$PKG.$cls" "$PKG.test/androidx.test.runner.AndroidJUnitRunner" >> "$OUT/instrument.txt" 2>&1
 done

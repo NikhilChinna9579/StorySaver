@@ -9,6 +9,7 @@ import com.storysaver.app.data.SharedItem
 import com.storysaver.app.downloads.DownloadRequest
 import com.storysaver.app.downloads.JobState
 import java.util.UUID
+import com.storysaver.app.media.TrimRange
 import com.storysaver.app.model.Platform
 import com.storysaver.app.model.SavedMedia
 import com.storysaver.app.util.FileNaming
@@ -127,17 +128,21 @@ class YouTubeViewModel(private val c: AppContainer) : ViewModel() {
         _state.update { it.copy(selected = q, job = YtJob.Ready) }
     }
 
-    fun download() {
+    private var pendingTrim: TrimRange? = null
+
+    fun download(trim: TrimRange? = null) {
         val s = _state.value
         val video = s.video ?: return
         val q = s.selected ?: return
         if (s.job is YtJob.Working) return
         if (c.saver.needsLegacyPermission()) {
+            pendingTrim = trim
             _state.update { it.copy(requestStoragePermission = true) }
             return
         }
         val request = DownloadRequest.YouTube(
-            title = if (q.audioOnly) "${video.title} · audio" else "${video.title} · ${q.label}",
+            title = (if (q.audioOnly) "${video.title} · audio" else "${video.title} · ${q.label}") +
+                if (trim != null) " · clip" else "",
             videoUrl = q.video.url,
             audioUrl = q.audio?.url,
             videoLength = q.video.contentLength,
@@ -146,6 +151,7 @@ class YouTubeViewModel(private val c: AppContainer) : ViewModel() {
             qualityLabel = q.label,
             audioOnly = q.audioOnly,
             fileBase = FileNaming.youtubeBase(video.title, video.channel, q.label, q.audioOnly),
+            trim = trim,
         )
         val id = c.jobs.enqueue(request)
         jobId = id
@@ -176,7 +182,7 @@ class YouTubeViewModel(private val c: AppContainer) : ViewModel() {
 
     fun onStoragePermissionResult(granted: Boolean) {
         _state.update { it.copy(requestStoragePermission = false) }
-        if (granted) download() else _state.update {
+        if (granted) download(pendingTrim) else _state.update {
             it.copy(error = "Storage permission is needed on Android 9 and older to save into your gallery. " +
                 "Alternatively, choose a custom folder in Settings.")
         }
