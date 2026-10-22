@@ -1,0 +1,89 @@
+package com.storysaver.app.util
+
+import com.storysaver.app.model.MediaType
+
+/** Pure-Kotlin MIME helpers (no Android dependencies, so they are unit-testable). */
+object MimeUtils {
+
+    private val imageByExt = mapOf(
+        "jpg" to "image/jpeg",
+        "jpeg" to "image/jpeg",
+        "png" to "image/png",
+        "webp" to "image/webp",
+        "gif" to "image/gif",
+        "heic" to "image/heic",
+        "heif" to "image/heif",
+    )
+
+    private val videoByExt = mapOf(
+        "mp4" to "video/mp4",
+        "m4v" to "video/mp4",
+        "3gp" to "video/3gpp",
+        "webm" to "video/webm",
+        "mkv" to "video/x-matroska",
+        "mov" to "video/quicktime",
+    )
+
+    private val extByMime: Map<String, String> = mapOf(
+        "image/jpeg" to "jpg",
+        "image/jpg" to "jpg",
+        "image/png" to "png",
+        "image/webp" to "webp",
+        "image/gif" to "gif",
+        "image/heic" to "heic",
+        "image/heif" to "heif",
+        "video/mp4" to "mp4",
+        "video/3gpp" to "3gp",
+        "video/webm" to "webm",
+        "video/x-matroska" to "mkv",
+        "video/quicktime" to "mov",
+    )
+
+    /** Lower-case extension of a file name or URL path, ignoring any query string. */
+    fun extensionOf(nameOrPath: String): String? {
+        val clean = nameOrPath.substringBefore('?').substringBefore('#')
+        val last = clean.substringAfterLast('/')
+        if (!last.contains('.')) return null
+        return last.substringAfterLast('.').lowercase().ifEmpty { null }
+    }
+
+    fun mimeFromName(nameOrPath: String): String? =
+        extensionOf(nameOrPath)?.let { imageByExt[it] ?: videoByExt[it] }
+
+    /** Strips parameters (e.g. "; charset=utf-8") and lower-cases a Content-Type header. */
+    fun normalize(contentType: String?): String? =
+        contentType?.substringBefore(';')?.trim()?.lowercase()?.ifEmpty { null }
+
+    fun typeFromMime(mime: String?): MediaType? {
+        val m = normalize(mime) ?: return null
+        return when {
+            m.startsWith("image/") -> MediaType.IMAGE
+            m.startsWith("video/") -> MediaType.VIDEO
+            else -> null
+        }
+    }
+
+    fun typeFromPath(path: String): MediaType? = typeFromMime(mimeFromName(path))
+
+    /** Best file extension for a MIME type; falls back to jpg / mp4 by top-level type. */
+    fun extensionForMime(mime: String): String {
+        val m = normalize(mime) ?: return "bin"
+        extByMime[m]?.let { return it }
+        return when {
+            m.startsWith("image/") -> "jpg"
+            m.startsWith("video/") -> "mp4"
+            else -> "bin"
+        }
+    }
+
+    /**
+     * Picks a usable MIME type: the reported one when it is an image/video,
+     * otherwise one derived from the file name (providers often report
+     * application/octet-stream for files in hidden folders).
+     */
+    fun resolve(reported: String?, fileName: String?): String? {
+        val r = normalize(reported)
+        if (typeFromMime(r) != null) return r
+        return fileName?.let { mimeFromName(it) }
+    }
+}
