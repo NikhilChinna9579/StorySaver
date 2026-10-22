@@ -1,5 +1,7 @@
 package com.storysaver.app
 
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsNodeInteractionsProvider
 import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -51,7 +53,7 @@ fun ComposeTestRule.openSource(type: String, source: String) {
 /** The text shown by the node with [tag]. */
 fun SemanticsNodeInteractionsProvider.textOf(tag: String): String =
     onAllNodesWithTag(tag, useUnmergedTree = true).fetchSemanticsNodes().firstOrNull()
-        ?.config?.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text)?.joinToString { it.text }.orEmpty()
+        ?.config?.getOrNull(SemanticsProperties.Text)?.joinToString { it.text }.orEmpty()
 
 /** Waits until the trim screen has loaded the media (its end time is known). */
 fun ComposeTestRule.waitForTrimScreen(timeoutMs: Long = 60_000) {
