@@ -17,6 +17,9 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -49,6 +52,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.testTag
+import androidx.compose.material3.AlertDialog
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
@@ -83,6 +91,11 @@ fun WhatsAppScreen(vm: LocalSaveViewModel, statuses: StatusRepository, onBack: (
     }
 
     LegacyStoragePermissionEffect(state.requestStoragePermission, vm::onStoragePermissionResult)
+
+    var showDetails by remember { mutableStateOf(false) }
+    if (showDetails) {
+        ScanDetailsDialog(state.scannedFolders, state.skippedNames, onDismiss = { showDetails = false })
+    }
 
     // Coming back from WhatsApp after viewing more statuses: pick them up automatically.
     LifecycleResumeEffect(state.folderGranted) {
@@ -162,15 +175,17 @@ fun WhatsAppScreen(vm: LocalSaveViewModel, statuses: StatusRepository, onBack: (
                 }
                 if (state.listedOnce && !state.loading) {
                     full {
-                        val skipped = if (state.skippedCount > 0) {
-                            " · ${state.skippedCount} other file${if (state.skippedCount == 1) "" else "s"} not shown (unfinished downloads or not media)"
-                        } else ""
-                        Text(
-                            "Found ${state.imageCount} image${if (state.imageCount == 1) "" else "s"} · " +
-                                "${state.videoCount} video${if (state.videoCount == 1) "" else "s"}$skipped",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            val skipped = if (state.skippedCount > 0) " · ${state.skippedCount} skipped" else ""
+                            Text(
+                                "Found ${state.imageCount} image${if (state.imageCount == 1) "" else "s"} · " +
+                                    "${state.videoCount} video${if (state.videoCount == 1) "" else "s"}$skipped",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(1f).testTag("wa_counts"),
+                            )
+                            TextButton(onClick = { showDetails = true }) { Text("Details") }
+                        }
                     }
                 }
                 when {
@@ -184,8 +199,8 @@ fun WhatsAppScreen(vm: LocalSaveViewModel, statuses: StatusRepository, onBack: (
                             "WhatsApp only saves a status to this folder after it has downloaded it on your phone, and removes it after about 24 hours. " +
                                 "Video statuses are often only downloaded once you play them to the end. " +
                                 "Open WhatsApp, view the status fully, then come back — the list updates automatically.\n\n" +
-                                "If you chose the wrong folder, tap Change and select the “.Statuses” folder " +
-                                "(Android/media/com.whatsapp/WhatsApp/Media/.Statuses on most phones).",
+                                "If you chose the wrong folder, tap Change and select the “WhatsApp” folder " +
+                                "(Android › media › com.whatsapp › WhatsApp on most phones). Tap Details to see which folders were read.",
                         )
                     }
                     else -> items(state.items, key = { it.uri.toString() }) { item ->
@@ -213,6 +228,39 @@ fun WhatsAppScreen(vm: LocalSaveViewModel, statuses: StatusRepository, onBack: (
     }
 }
 
+@Composable
+private fun ScanDetailsDialog(folders: List<String>, skipped: List<String>, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } },
+        title = { Text("What was scanned") },
+        text = {
+            Column(
+                Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text("Status folders read:", fontWeight = FontWeight.SemiBold)
+                Text(folders.ifEmpty { listOf("(none)") }.joinToString("\n") { "• $it" })
+                if (folders.size == 1 && !folders[0].endsWith(".Statuses", ignoreCase = true)) {
+                    Text(
+                        "No “.Statuses” folder was found inside the folder you chose, so Story Saver read that " +
+                            "folder directly. Tap Change and pick the “WhatsApp” folder instead.",
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                Text("Skipped files (${skipped.size}):", fontWeight = FontWeight.SemiBold)
+                Text(if (skipped.isEmpty()) "None" else skipped.take(200).joinToString("\n") { "• $it" })
+                Text(
+                    "WhatsApp only puts a status in these folders once it has downloaded it. If a status you " +
+                        "watched isn't here, play it fully in WhatsApp (videos often download only when played).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+    )
+}
+
 private fun LazyGridScope.full(content: @Composable () -> Unit) {
     item(span = { GridItemSpan(maxLineSpan) }) { content() }
 }
@@ -221,15 +269,16 @@ private fun LazyGridScope.full(content: @Composable () -> Unit) {
 private fun GrantFolderCard(onGrant: () -> Unit, onGrantBusiness: () -> Unit, onPickFile: () -> Unit) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Connect your WhatsApp status folder", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text("Connect WhatsApp", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Text(
-                "Android only lets Story Saver see a folder you choose. Grant access once:\n\n" +
-                    "1. View the statuses you want in WhatsApp first.\n" +
-                    "2. Tap “Grant folder access”. The picker should open at the “.Statuses” folder.\n" +
-                    "3. Tap “Use this folder”, then “Allow”.\n\n" +
-                    "If the picker opens somewhere else, navigate to Android › media › com.whatsapp › WhatsApp › " +
-                    "Media › .Statuses (older phones: WhatsApp › Media › .Statuses). Some phones hide folders " +
-                    "starting with a dot — use the picker menu to show hidden files, or use “Pick a file”.",
+                "WhatsApp doesn't let other apps connect to it directly. Instead it saves the statuses you watch " +
+                    "into a folder on your phone, and Android lets you give Story Saver access to that folder. " +
+                    "Do this once:\n\n" +
+                    "1. Tap “Grant folder access”. The picker opens in the “WhatsApp” folder.\n" +
+                    "2. Tap “Use this folder”, then “Allow”.\n\n" +
+                    "If it opens somewhere else, go to Android › media › com.whatsapp and select the “WhatsApp” folder " +
+                    "(older phones: the “WhatsApp” folder at the top of your storage). Story Saver finds every status " +
+                    "folder inside it, including other WhatsApp accounts on this phone.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -252,7 +301,8 @@ private fun StatusTile(item: StatusItem, selected: Boolean, onClick: () -> Unit)
         modifier = Modifier
             .aspectRatio(0.75f)
             .then(if (selected) Modifier.border(BorderStroke(3.dp, Accents.WhatsApp), shape) else Modifier)
-            .clickable(onClick = onClick),
+            .clickable(onClick = onClick)
+            .testTag("wa_tile"),
     )
 }
 

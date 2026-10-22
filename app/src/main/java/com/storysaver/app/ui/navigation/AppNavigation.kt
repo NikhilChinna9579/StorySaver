@@ -128,7 +128,7 @@ fun StorySaverNavHost(container: AppContainer) {
                 when (platform) {
                     Platform.INSTAGRAM -> {
                         val vm: InstagramViewModel = viewModel(factory = viewModelFactory {
-                            initializer { InstagramViewModel(type, container) }
+                            initializer { InstagramViewModel(container) }
                         })
                         InstagramScreen(vm, onBack = { nav.popBackStack() })
                     }

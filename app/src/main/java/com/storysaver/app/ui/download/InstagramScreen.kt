@@ -2,6 +2,7 @@
 
 package com.storysaver.app.ui.download
 
+import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,16 +20,20 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material.icons.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.PhotoCamera
-import androidx.compose.material.icons.outlined.Save
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -43,26 +48,27 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.storysaver.app.model.MediaType
+import com.storysaver.app.ui.MediaIntents
 import com.storysaver.app.ui.components.BannerKind
 import com.storysaver.app.ui.components.LegacyStoragePermissionEffect
 import com.storysaver.app.ui.components.MediaThumb
-import com.storysaver.app.ui.components.MediaTypeToggle
 import com.storysaver.app.ui.components.MessageBanner
 import com.storysaver.app.ui.components.ProgressBlock
-import com.storysaver.app.ui.components.SavedResultCard
 import com.storysaver.app.ui.theme.Accents
-import com.storysaver.app.util.formatBytes
 
 @Composable
 fun InstagramScreen(vm: InstagramViewModel, onBack: () -> Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
     val clipboard = LocalClipboardManager.current
-    val busy = state.phase is IgPhase.Fetching || state.phase is IgPhase.Saving
+    val busy = state.busy
 
     LegacyStoragePermissionEffect(state.requestStoragePermission, vm::onStoragePermissionResult)
 
@@ -73,12 +79,10 @@ fun InstagramScreen(vm: InstagramViewModel, onBack: () -> Unit) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Outlined.PhotoCamera, contentDescription = null, tint = Accents.Instagram)
                         Spacer(Modifier.width(10.dp))
-                        Text("Instagram Story")
+                        Text("Instagram")
                     }
                 },
-                navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
-                },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
             )
         },
     ) { padding ->
@@ -90,25 +94,23 @@ fun InstagramScreen(vm: InstagramViewModel, onBack: () -> Unit) {
                 .padding(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            MediaTypeToggle(state.mediaType, vm::onMediaTypeChange)
-
             OutlinedTextField(
                 value = state.url,
                 onValueChange = vm::onUrlChange,
-                label = { Text("Instagram link") },
-                placeholder = { Text("https://…") },
+                label = { Text("Reel or post link") },
+                placeholder = { Text("https://www.instagram.com/reel/…") },
                 leadingIcon = { Icon(Icons.Outlined.Link, contentDescription = null) },
                 trailingIcon = {
                     if (state.url.isNotEmpty() && !busy) {
-                        IconButton(onClick = { vm.onUrlChange("") }) { Icon(Icons.Outlined.Close, "Clear") }
+                        IconButton(onClick = vm::reset) { Icon(Icons.Outlined.Close, "Clear") }
                     }
                 },
                 singleLine = true,
                 enabled = !busy,
                 isError = state.error != null,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go),
-                keyboardActions = KeyboardActions(onGo = { vm.fetch() }),
-                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { vm.find() }),
+                modifier = Modifier.fillMaxWidth().testTag("ig_url"),
             )
 
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -121,68 +123,106 @@ fun InstagramScreen(vm: InstagramViewModel, onBack: () -> Unit) {
                     Spacer(Modifier.width(8.dp)); Text("Paste")
                 }
                 Button(
-                    onClick = vm::fetch,
+                    onClick = vm::find,
                     enabled = !busy && state.url.isNotBlank(),
-                    modifier = Modifier.weight(1f).height(52.dp),
+                    modifier = Modifier.weight(1f).height(52.dp).testTag("ig_find"),
                 ) {
-                    Icon(Icons.Outlined.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp)); Text("Download")
+                    Icon(Icons.Outlined.Search, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp)); Text("Find media")
                 }
             }
 
-            state.unsupported?.let {
-                MessageBanner(BannerKind.UNSUPPORTED, it.title, it.message)
-            }
-            state.error?.let {
-                MessageBanner(BannerKind.ERROR, "Couldn't continue", it, onDismiss = vm::dismissError)
-            }
+            state.unsupported?.let { MessageBanner(BannerKind.UNSUPPORTED, it.title, it.message) }
+            state.error?.let { MessageBanner(BannerKind.ERROR, "Couldn't get this post", it, onDismiss = vm::dismissError) }
 
             when (val phase = state.phase) {
-                IgPhase.Idle -> if (state.unsupported == null && state.error == null) HowItWorksCard()
-                is IgPhase.Fetching -> ProgressBlock("Downloading…", phase.progress, onCancel = vm::cancel)
-                is IgPhase.Ready -> PreviewCard(
-                    phase, state.mediaType, state.destinationLabel,
-                    isSaving = false, progress = null, onSave = vm::save,
-                )
-                is IgPhase.Saving -> PreviewCard(
-                    phase.ready, state.mediaType, state.destinationLabel,
-                    isSaving = true, progress = phase.progress, onSave = {}, onCancel = vm::cancel,
-                )
-                is IgPhase.Saved -> SavedResultCard(phase.media, onSaveAnother = vm::reset)
+                IgPhase.Idle -> if (state.unsupported == null && state.error == null) HowItWorks()
+                IgPhase.Resolving -> ProgressBlock("Looking up the post…", null, onCancel = vm::cancel)
+                is IgPhase.Found -> FoundPost(phase, onSave = vm::save, onSaveAll = vm::saveAll, onCancel = vm::cancel)
             }
         }
     }
 }
 
 @Composable
-private fun PreviewCard(
-    ready: IgPhase.Ready,
-    type: MediaType,
-    destination: String,
-    isSaving: Boolean,
-    progress: Float?,
-    onSave: () -> Unit,
-    onCancel: () -> Unit = {},
-) {
+private fun FoundPost(found: IgPhase.Found, onSave: (Int) -> Unit, onSaveAll: () -> Unit, onCancel: () -> Unit) {
+    val items = found.items
+    val images = items.count { it.item.type == MediaType.IMAGE }
+    val videos = items.size - images
+    val anyActive = items.any { it.state is IgItemState.Downloading || it.state is IgItemState.Saving }
+    val remaining = items.count { it.state !is IgItemState.Saved }
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    found.post.owner?.let { "@$it" } ?: "Media found",
+                    style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    listOfNotNull(
+                        images.takeIf { it > 0 }?.let { "$it image${if (it == 1) "" else "s"}" },
+                        videos.takeIf { it > 0 }?.let { "$it video${if (it == 1) "" else "s"}" },
+                    ).joinToString(" · "),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.testTag("ig_found_summary"),
+                )
+            }
+            if (items.size > 1 && remaining > 0) {
+                Button(onClick = onSaveAll, enabled = !anyActive) { Text("Save all") }
+            }
+        }
+        items.forEach { ui -> ItemCard(ui, onSave = { onSave(ui.item.index) }, onCancel = onCancel, label = if (items.size > 1) "${ui.item.index + 1}/${items.size}" else null, enabled = !anyActive) }
+    }
+}
+
+@Composable
+private fun ItemCard(ui: IgItemUi, onSave: () -> Unit, onCancel: () -> Unit, label: String?, enabled: Boolean) {
+    val context = LocalContext.current
+    val item = ui.item
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Preview", style = MaterialTheme.typography.titleMedium)
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             MediaThumb(
-                model = ready.file, isVideo = type == MediaType.VIDEO,
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxWidth().aspectRatio(1f),
+                model = item.thumbnailUrl ?: item.url,
+                isVideo = item.type == MediaType.VIDEO,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxWidth().aspectRatio(if (item.type == MediaType.VIDEO) 0.8f else 1f),
             )
             Text(
-                "${type.label} · ${ready.mimeType} · ${formatBytes(ready.sizeBytes)}\nWill be saved to $destination",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                listOfNotNull(label, item.type.label).joinToString(" · "),
+                style = MaterialTheme.typography.labelLarge,
             )
-            if (isSaving) {
-                ProgressBlock("Saving…", progress, onCancel = onCancel)
-            } else {
-                Button(onClick = onSave, modifier = Modifier.fillMaxWidth().height(52.dp)) {
-                    Icon(Icons.Outlined.Save, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp)); Text("Save ${type.label.lowercase()}")
+            when (val s = ui.state) {
+                IgItemState.Ready -> Button(
+                    onClick = onSave, enabled = enabled,
+                    modifier = Modifier.fillMaxWidth().height(50.dp).testTag("ig_save_${item.index}"),
+                ) {
+                    Icon(Icons.Outlined.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp)); Text("Save ${item.type.label.lowercase()}")
+                }
+                is IgItemState.Downloading -> ProgressBlock("Downloading…", s.progress, onCancel = onCancel)
+                is IgItemState.Saving -> ProgressBlock("Saving…", s.progress)
+                is IgItemState.Failed -> {
+                    MessageBanner(BannerKind.ERROR, "Couldn't save", s.message)
+                    OutlinedButton(onClick = onSave, enabled = enabled, modifier = Modifier.fillMaxWidth()) { Text("Try again") }
+                }
+                is IgItemState.Saved -> {
+                    val uri = Uri.parse(s.media.uri)
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.testTag("ig_saved_${item.index}")) {
+                        Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = Accents.Success)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Saved to ${s.media.locationLabel}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilledTonalButton(onClick = { MediaIntents.open(context, uri, s.media.mimeType) }) {
+                            Icon(Icons.Outlined.OpenInNew, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp)); Text("Open")
+                        }
+                        FilledTonalButton(onClick = { MediaIntents.share(context, uri, s.media.mimeType) }) {
+                            Icon(Icons.Outlined.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp)); Text("Share")
+                        }
+                    }
                 }
             }
         }
@@ -190,13 +230,13 @@ private fun PreviewCard(
 }
 
 @Composable
-private fun HowItWorksCard() {
+private fun HowItWorks() {
     MessageBanner(
         BannerKind.INFO,
-        "Which links work?",
-        "Story Saver downloads direct media links — links that point straight at an image or video file " +
-            "on Instagram's media servers (cdninstagram.com / fbcdn.net) that open without logging in.\n\n" +
-            "Normal Story, post and reel links open a page rather than a file, so they can't be downloaded " +
-            "with a supported method. You'll get an explanation if you paste one.",
+        "How to use",
+        "In Instagram, open a reel or post → tap Share (paper plane) → Copy link. Then tap Paste here.\n\n" +
+            "Works for reels, posts and multi-photo posts from public accounts. Private accounts and Stories " +
+            "can't be downloaded — Instagram only shows those to logged-in users, and Story Saver never logs in.\n\n" +
+            "Tip: you can also tap Share → Story Saver directly from Instagram.",
     )
 }

@@ -78,7 +78,7 @@ fun HomeScreen(onContinue: (Platform, MediaType) -> Unit, modifier: Modifier = M
                 onClick = { platform = Platform.WHATSAPP }, modifier = Modifier.weight(1f),
             )
             SelectableCard(
-                title = "Instagram Story", subtitle = "From a pasted media link", icon = Icons.Outlined.PhotoCamera,
+                title = "Instagram Story", subtitle = "Paste a reel or post link", icon = Icons.Outlined.PhotoCamera,
                 selected = platform == Platform.INSTAGRAM, accent = Accents.Instagram,
                 onClick = { platform = Platform.INSTAGRAM }, modifier = Modifier.weight(1f),
             )

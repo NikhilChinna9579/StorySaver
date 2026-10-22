@@ -11,6 +11,7 @@ import com.storysaver.app.data.MediaSaver
 import com.storysaver.app.data.SettingsRepository
 import com.storysaver.app.data.ShareInbox
 import com.storysaver.app.data.StatusRepository
+import com.storysaver.app.instagram.InstagramExtractor
 import okhttp3.OkHttpClient
 import java.io.File
 import java.util.concurrent.TimeUnit
@@ -53,6 +54,7 @@ class AppContainer(context: Context) {
         .build()
 
     val downloader = DirectMediaDownloader(httpClient, File(app.cacheDir, "downloads"))
+    val instagram = InstagramExtractor(httpClient)
 }
 
 val Context.appContainer: AppContainer

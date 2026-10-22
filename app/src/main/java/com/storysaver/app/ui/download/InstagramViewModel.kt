@@ -7,53 +7,70 @@ import com.storysaver.app.AppContainer
 import com.storysaver.app.data.DirectMediaDownloader
 import com.storysaver.app.data.MediaSaver
 import com.storysaver.app.data.SharedItem
-import com.storysaver.app.model.MediaType
+import com.storysaver.app.instagram.IgMediaItem
+import com.storysaver.app.instagram.IgPost
+import com.storysaver.app.instagram.InstagramExtractor
 import com.storysaver.app.model.Platform
 import com.storysaver.app.model.SavedMedia
 import com.storysaver.app.util.UrlCheck
 import com.storysaver.app.util.UrlValidator
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.io.File
+import kotlinx.coroutines.withContext
+
+sealed interface IgItemState {
+    data object Ready : IgItemState
+    data class Downloading(val progress: Float?) : IgItemState
+    data class Saving(val progress: Float?) : IgItemState
+    data class Saved(val media: SavedMedia) : IgItemState
+    data class Failed(val message: String) : IgItemState
+}
+
+data class IgItemUi(val item: IgMediaItem, val state: IgItemState = IgItemState.Ready)
 
 sealed interface IgPhase {
     data object Idle : IgPhase
-    data class Fetching(val progress: Float?) : IgPhase
-    data class Ready(val file: File, val mimeType: String, val sizeBytes: Long) : IgPhase
-    data class Saving(val ready: Ready, val progress: Float?) : IgPhase
-    data class Saved(val media: SavedMedia) : IgPhase
+    data object Resolving : IgPhase
+    data class Found(val post: IgPost, val items: List<IgItemUi>) : IgPhase
 }
 
-/** An honest "we can't do this" — deliberately different from a download failure. */
+/** An honest "we can't do this" — shown differently from a failed download. */
 data class Unsupported(val title: String, val message: String)
 
 data class IgUiState(
     val url: String = "",
-    val mediaType: MediaType,
     val phase: IgPhase = IgPhase.Idle,
     val error: String? = null,
     val unsupported: Unsupported? = null,
     val requestStoragePermission: Boolean = false,
-    val destinationLabel: String = "",
-)
+) {
+    val busy: Boolean
+        get() = phase is IgPhase.Resolving || (phase as? IgPhase.Found)?.items?.any {
+            it.state is IgItemState.Downloading || it.state is IgItemState.Saving
+        } == true
+}
 
-class InstagramViewModel(initialType: MediaType, private val c: AppContainer) : ViewModel() {
+class InstagramViewModel(private val c: AppContainer) : ViewModel() {
 
-    private val _state = MutableStateFlow(
-        IgUiState(mediaType = initialType, destinationLabel = c.saver.destinationLabel(initialType))
-    )
+    private val _state = MutableStateFlow(IgUiState())
     val state: StateFlow<IgUiState> = _state.asStateFlow()
-    private var job: Job? = null
+
+    private var resolveJob: Job? = null
+    private var saveJob: Job? = null
+    /** Items waiting for the Android 8–9 storage permission. */
+    private var pendingSave: List<Int> = emptyList()
 
     init {
-        // A link shared into the app from another app's share sheet.
+        // A link shared into the app from Instagram's share sheet: fill it in and look it up right away.
         (c.shareInbox.pending.value as? SharedItem.Text)?.let {
             c.shareInbox.take()
             onUrlChange(UrlValidator.extractFirstUrl(it.text) ?: it.text)
+            find()
         }
     }
 
@@ -61,146 +78,156 @@ class InstagramViewModel(initialType: MediaType, private val c: AppContainer) : 
 
     fun onPaste(clipboard: String?) {
         if (clipboard.isNullOrBlank()) {
-            _state.update { it.copy(error = "Your clipboard is empty. Copy a link first.") }
+            _state.update { it.copy(error = "Your clipboard is empty. In Instagram tap Share → Copy link first.") }
             return
         }
         onUrlChange(UrlValidator.extractFirstUrl(clipboard) ?: clipboard.trim())
+        find()
     }
 
-    fun onMediaTypeChange(type: MediaType) {
-        if (_state.value.phase is IgPhase.Fetching || _state.value.phase is IgPhase.Saving) return
-        discardTemp()
-        _state.update {
-            it.copy(mediaType = type, phase = IgPhase.Idle, error = null, destinationLabel = c.saver.destinationLabel(type))
-        }
-    }
-
-    fun fetch() {
-        val s = _state.value
+    /** Looks the link up and lists the media it contains. */
+    fun find() {
+        if (_state.value.busy) return
+        val check = UrlValidator.check(_state.value.url)
         _state.update { it.copy(error = null, unsupported = null) }
-        when (val check = UrlValidator.check(s.url)) {
-            is UrlCheck.Invalid -> _state.update { it.copy(error = check.reason) }
-            UrlCheck.NotInstagram -> _state.update {
-                it.copy(error = "This isn't an Instagram link. Paste a link from instagram.com or an Instagram media link.")
+        when (check) {
+            is UrlCheck.Invalid -> {
+                _state.update { it.copy(error = check.reason, phase = IgPhase.Idle) }
+                return
             }
-            is UrlCheck.StoryPage -> _state.update { it.copy(unsupported = storyUnsupported()) }
-            is UrlCheck.PostPage -> _state.update { it.copy(unsupported = postUnsupported(check.kind)) }
-            UrlCheck.OtherInstagramPage -> _state.update {
-                it.copy(
-                    unsupported = Unsupported(
-                        "This link isn't a media file",
-                        "It opens an Instagram page (such as a profile), not an image or video. " +
-                            "Paste a direct media link instead.",
-                    )
-                )
-            }
-            is UrlCheck.DirectMedia -> {
-                if (check.guessedType != null && check.guessedType != s.mediaType) {
-                    _state.update {
-                        it.copy(error = "This link looks like a ${check.guessedType.label.lowercase()}, but " +
-                            "${s.mediaType.label} is selected. Switch the type above.")
-                    }
-                    return
+            UrlCheck.NotInstagram -> {
+                _state.update {
+                    it.copy(phase = IgPhase.Idle,
+                        error = "This isn't an Instagram link. In Instagram, open the reel or post, tap Share → Copy link, and paste it here.")
                 }
-                startDownload(check.url, s.mediaType)
+                return
             }
+            UrlCheck.OtherInstagramPage -> {
+                _state.update {
+                    it.copy(phase = IgPhase.Idle, unsupported = Unsupported(
+                        "That's not a post or reel link",
+                        "This link opens an Instagram page such as a profile. Open the specific reel or post, " +
+                            "tap Share → Copy link, and paste that instead.",
+                    ))
+                }
+                return
+            }
+            is UrlCheck.StoryPage -> {
+                _state.update {
+                    it.copy(phase = IgPhase.Idle,
+                        unsupported = Unsupported("Stories can't be downloaded from a link", InstagramExtractor.STORY_MESSAGE))
+                }
+                return
+            }
+            else -> Unit
         }
-    }
 
-    private fun startDownload(url: String, type: MediaType) {
-        discardTemp()
-        job?.cancel()
-        job = viewModelScope.launch {
-            _state.update { it.copy(phase = IgPhase.Fetching(null)) }
-            val result = c.downloader.fetch(url, type) { p ->
-                _state.update { st -> if (st.phase is IgPhase.Fetching) st.copy(phase = IgPhase.Fetching(p)) else st }
-            }
+        resolveJob?.cancel()
+        resolveJob = viewModelScope.launch {
+            _state.update { it.copy(phase = IgPhase.Resolving) }
+            val result = withContext(Dispatchers.IO) { c.instagram.resolve(check) }
             _state.update {
                 when (result) {
-                    is DirectMediaDownloader.Result.Success ->
-                        it.copy(phase = IgPhase.Ready(result.file, result.mimeType, result.sizeBytes))
-                    is DirectMediaDownloader.Result.Failure -> it.copy(phase = IgPhase.Idle, error = result.message)
+                    is InstagramExtractor.Result.Success -> it.copy(
+                        phase = IgPhase.Found(result.post, result.post.items.map { item -> IgItemUi(item) }),
+                    )
+                    is InstagramExtractor.Result.Failure ->
+                        if (result.reason == InstagramExtractor.Reason.UNSUPPORTED) {
+                            it.copy(phase = IgPhase.Idle, unsupported = Unsupported("Can't download this link", result.message))
+                        } else {
+                            it.copy(phase = IgPhase.Idle, error = result.message)
+                        }
                 }
             }
         }
     }
 
-    fun save() {
-        val ready = when (val p = _state.value.phase) {
-            is IgPhase.Ready -> p
-            else -> return
-        }
+    fun save(index: Int) = startSaving(listOf(index))
+
+    fun saveAll() {
+        val found = _state.value.phase as? IgPhase.Found ?: return
+        startSaving(found.items.filter { it.state !is IgItemState.Saved }.map { it.item.index })
+    }
+
+    private fun startSaving(indices: List<Int>) {
+        if (indices.isEmpty() || saveJob?.isActive == true) return
         if (c.saver.needsLegacyPermission()) {
+            pendingSave = indices
             _state.update { it.copy(requestStoragePermission = true) }
             return
         }
-        job = viewModelScope.launch {
-            _state.update { it.copy(phase = IgPhase.Saving(ready, null), error = null) }
-            val outcome = c.saver.save(Uri.fromFile(ready.file), ready.mimeType, Platform.INSTAGRAM) { p ->
-                _state.update { st -> if (st.phase is IgPhase.Saving) st.copy(phase = IgPhase.Saving(ready, p)) else st }
-            }
-            when (outcome) {
-                is MediaSaver.Outcome.Saved -> {
-                    c.history.add(outcome.media)
-                    ready.file.delete()
-                    _state.update { it.copy(phase = IgPhase.Saved(outcome.media)) }
-                }
-                is MediaSaver.Outcome.Failed -> _state.update { it.copy(phase = ready, error = outcome.message) }
-                MediaSaver.Outcome.NeedsStoragePermission ->
-                    _state.update { it.copy(phase = ready, requestStoragePermission = true) }
+        saveJob = viewModelScope.launch {
+            for (index in indices) saveOne(index)
+        }
+    }
+
+    private suspend fun saveOne(index: Int) {
+        val found = _state.value.phase as? IgPhase.Found ?: return
+        val item = found.items.firstOrNull { it.item.index == index }?.item ?: return
+        setItem(index, IgItemState.Downloading(null))
+
+        val fetched = c.downloader.fetch(item.url, null) { p -> setItem(index, IgItemState.Downloading(p)) }
+        val file = when (fetched) {
+            is DirectMediaDownloader.Result.Success -> fetched
+            is DirectMediaDownloader.Result.Failure -> {
+                setItem(index, IgItemState.Failed(fetched.message))
+                return
             }
         }
+        setItem(index, IgItemState.Saving(null))
+        try {
+            when (val outcome = c.saver.save(Uri.fromFile(file.file), file.mimeType, Platform.INSTAGRAM) { p ->
+                setItem(index, IgItemState.Saving(p))
+            }) {
+                is MediaSaver.Outcome.Saved -> {
+                    c.history.add(outcome.media)
+                    setItem(index, IgItemState.Saved(outcome.media))
+                }
+                is MediaSaver.Outcome.Failed -> setItem(index, IgItemState.Failed(outcome.message))
+                MediaSaver.Outcome.NeedsStoragePermission -> {
+                    setItem(index, IgItemState.Ready)
+                    pendingSave = listOf(index)
+                    _state.update { it.copy(requestStoragePermission = true) }
+                }
+            }
+        } finally {
+            file.file.delete()
+        }
+    }
+
+    private fun setItem(index: Int, newState: IgItemState) = _state.update { s ->
+        val found = s.phase as? IgPhase.Found ?: return@update s
+        s.copy(phase = found.copy(items = found.items.map { if (it.item.index == index) it.copy(state = newState) else it }))
     }
 
     fun onStoragePermissionResult(granted: Boolean) {
         _state.update { it.copy(requestStoragePermission = false) }
-        if (granted) save() else _state.update {
+        val pending = pendingSave
+        pendingSave = emptyList()
+        if (granted) startSaving(pending) else _state.update {
             it.copy(error = "Storage permission is needed on Android 9 and older to save into your gallery. " +
                 "Alternatively, choose a custom folder in Settings.")
         }
     }
 
     fun cancel() {
-        job?.cancel()
-        val p = _state.value.phase
-        _state.update { it.copy(phase = if (p is IgPhase.Saving) p.ready else IgPhase.Idle, error = "Cancelled.") }
-    }
-
-    fun reset() {
-        job?.cancel()
-        discardTemp()
-        _state.update { it.copy(url = "", phase = IgPhase.Idle, error = null, unsupported = null) }
-    }
-
-    fun dismissError() = _state.update { it.copy(error = null) }
-
-    private fun discardTemp() {
-        when (val p = _state.value.phase) {
-            is IgPhase.Ready -> p.file.delete()
-            is IgPhase.Saving -> p.ready.file.delete()
-            else -> Unit
+        resolveJob?.cancel()
+        saveJob?.cancel()
+        _state.update { s ->
+            when (val p = s.phase) {
+                IgPhase.Resolving -> s.copy(phase = IgPhase.Idle)
+                is IgPhase.Found -> s.copy(phase = p.copy(items = p.items.map {
+                    if (it.state is IgItemState.Downloading || it.state is IgItemState.Saving) it.copy(state = IgItemState.Ready) else it
+                }))
+                else -> s
+            }
         }
     }
 
-    override fun onCleared() {
-        discardTemp()
+    fun reset() {
+        cancel()
+        _state.update { IgUiState() }
     }
 
-    private fun storyUnsupported() = Unsupported(
-        "Story links can't be downloaded directly",
-        "An Instagram Story link opens the story page in Instagram — it doesn't point to the image or video " +
-            "file itself, and Instagram offers no public way to fetch story media from it. Story Saver won't " +
-            "log in for you, scrape pages, or get around private accounts.\n\n" +
-            "What you can do instead:\n" +
-            "• For your own stories, use Instagram's Archive or the story's Save option.\n" +
-            "• If you have a direct media link (on cdninstagram.com or fbcdn.net), paste that here.\n" +
-            "• If another app shares the actual image or video file, use Share → Story Saver.",
-    )
-
-    private fun postUnsupported(kind: String) = Unsupported(
-        "This $kind link isn't a media file",
-        "Instagram $kind links open a web page, not the underlying image or video, so they can't be " +
-            "downloaded with a supported method. Paste a direct media link instead, or use Share → Story Saver " +
-            "from an app that shares the file itself.",
-    )
+    fun dismissError() = _state.update { it.copy(error = null) }
 }

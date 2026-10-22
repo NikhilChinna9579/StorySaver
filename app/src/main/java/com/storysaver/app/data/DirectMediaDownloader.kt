@@ -32,13 +32,13 @@ class DirectMediaDownloader(
         data class Failure(val message: String) : Result
     }
 
-    suspend fun fetch(url: String, expected: MediaType, onProgress: (Float?) -> Unit): Result =
+    suspend fun fetch(url: String, expected: MediaType?, onProgress: (Float?) -> Unit): Result =
         withContext(Dispatchers.IO) { doFetch(url, expected, onProgress) }
 
-    private suspend fun doFetch(url: String, expected: MediaType, onProgress: (Float?) -> Unit): Result {
+    private suspend fun doFetch(url: String, expected: MediaType?, onProgress: (Float?) -> Unit): Result {
         val request = Request.Builder()
             .url(url)
-            .header("User-Agent", "StorySaver/1.0 (Android)")
+            .header("User-Agent", com.storysaver.app.instagram.InstagramExtractor.APP_UA)
             .build()
         val call = client.newCall(request)
         var tmp: File? = null
@@ -55,7 +55,7 @@ class DirectMediaDownloader(
                             "which Story Saver can't download from."
                     )
                 val actual = MimeUtils.typeFromMime(mime)
-                if (actual != expected) {
+                if (expected != null && actual != expected) {
                     return Result.Failure(
                         "This link is a${if (actual == MediaType.IMAGE) "n image" else " video"}, but " +
                             "${expected.label} is selected. Switch the type above and try again."

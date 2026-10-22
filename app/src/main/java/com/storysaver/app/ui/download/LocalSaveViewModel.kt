@@ -33,6 +33,8 @@ data class LocalUiState(
     val imageCount: Int = 0,
     val videoCount: Int = 0,
     val skippedCount: Int = 0,
+    val skippedNames: List<String> = emptyList(),
+    val scannedFolders: List<String> = emptyList(),
     val listedOnce: Boolean = false,
     val selected: StatusItem? = null,
     val saving: Boolean = false,
@@ -118,6 +120,8 @@ class LocalSaveViewModel(
                         imageCount = scan.of(MediaType.IMAGE).size,
                         videoCount = scan.of(MediaType.VIDEO).size,
                         skippedCount = scan.skipped.size,
+                        skippedNames = scan.skipped,
+                        scannedFolders = scan.folders,
                     )
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {

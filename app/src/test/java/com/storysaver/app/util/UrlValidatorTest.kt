@@ -37,8 +37,40 @@ class UrlValidatorTest {
     }
 
     @Test fun postAndReelAreRecognised() {
-        assertEquals(UrlCheck.PostPage("post"), UrlValidator.check("https://www.instagram.com/p/AbC123/"))
-        assertEquals(UrlCheck.PostPage("reel"), UrlValidator.check("https://www.instagram.com/reel/AbC123/"))
+        assertEquals(UrlCheck.Post("AbC123", "post"), UrlValidator.check("https://www.instagram.com/p/AbC123/"))
+        assertEquals(UrlCheck.Post("AbC123", "reel"), UrlValidator.check("https://www.instagram.com/reel/AbC123/"))
+        assertEquals(UrlCheck.Post("AbC123", "reel"), UrlValidator.check("https://www.instagram.com/reels/AbC123"))
+        assertEquals(UrlCheck.Post("AbC123", "video"), UrlValidator.check("https://instagram.com/tv/AbC123/"))
+    }
+
+    /** The exact link format from Instagram's Share → Copy link (the user's real example). */
+    @Test fun copiedReelLinkWithTrackingParams() {
+        assertEquals(
+            UrlCheck.Post("DeyQf_PzHlD", "reel"),
+            UrlValidator.check("https://www.instagram.com/reel/DeyQf_PzHlD/?exln=dmcxMDJ0YmxzMnFn"),
+        )
+        assertEquals(
+            UrlCheck.Post("DeyQf_PzHlD", "reel"),
+            UrlValidator.check("https://www.instagram.com/reel/DeyQf_PzHlD/?igsh=MWQ1ZGUxMzBkMA=="),
+        )
+        // Pasted together with share text, on mobile host, without scheme
+        assertEquals(UrlCheck.Post("DeyQf_PzHlD", "reel"),
+            UrlValidator.check("Watch this! https://www.instagram.com/reel/DeyQf_PzHlD/?utm_source=ig_web_copy_link"))
+        assertEquals(UrlCheck.Post("C9xYz_12AB", "post"), UrlValidator.check("https://m.instagram.com/p/C9xYz_12AB/"))
+        assertEquals(UrlCheck.Post("C9xYz_12AB", "post"), UrlValidator.check("instagram.com/p/C9xYz_12AB"))
+    }
+
+    @Test fun usernamePrefixedAndShareLinks() {
+        assertEquals(UrlCheck.Post("C9xYz_12AB", "post"), UrlValidator.check("https://www.instagram.com/some.user/p/C9xYz_12AB/"))
+        assertEquals(UrlCheck.Post("C9xYz_12AB", "reel"), UrlValidator.check("https://www.instagram.com/some.user/reel/C9xYz_12AB/"))
+        val share = UrlValidator.check("https://www.instagram.com/share/reel/BAkd9fzXyZ")
+        assertTrue(share is UrlCheck.ShareLink)
+        assertTrue(UrlValidator.check("https://www.instagram.com/share/") is UrlCheck.OtherInstagramPage)
+    }
+
+    @Test fun badShortcodesAreNotPosts() {
+        assertEquals(UrlCheck.OtherInstagramPage, UrlValidator.check("https://www.instagram.com/p/"))
+        assertEquals(UrlCheck.OtherInstagramPage, UrlValidator.check("https://www.instagram.com/p/a!b/"))
     }
 
     @Test fun profileIsOtherPage() {
