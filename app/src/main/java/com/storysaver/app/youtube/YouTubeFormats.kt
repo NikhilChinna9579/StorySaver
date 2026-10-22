@@ -27,6 +27,8 @@ data class YtQuality(
     val video: StreamDesc,
     /** Separate audio stream to merge in; null when [video] already contains audio. */
     val audio: StreamDesc?,
+    /** Audio-only download: [video] holds the audio stream, saved as .m4a. */
+    val audioOnly: Boolean = false,
 ) {
     val needsMerge: Boolean get() = audio != null
 
@@ -75,12 +77,18 @@ object YouTubeFormats {
                 }
         }
 
-        return byHeight.values.sortedWith(compareByDescending<YtQuality> { it.height }.thenByDescending { it.fps })
+        val videos = byHeight.values.sortedWith(compareByDescending<YtQuality> { it.height }.thenByDescending { it.fps })
+        val audioOption = bestAudio?.let { YtQuality(AUDIO_LABEL, 0, 0, it, null, audioOnly = true) }
+        return videos + listOfNotNull(audioOption)
     }
 
-    /** The option to preselect: the highest at or below [preferHeight], else the lowest. */
-    fun defaultChoice(options: List<YtQuality>, preferHeight: Int = 720): YtQuality? =
-        options.firstOrNull { it.height <= preferHeight } ?: options.lastOrNull()
+    const val AUDIO_LABEL = "Audio only"
+
+    /** The video option to preselect: the highest at or below [preferHeight], else the lowest video. */
+    fun defaultChoice(options: List<YtQuality>, preferHeight: Int = 720): YtQuality? {
+        val videos = options.filter { !it.audioOnly }
+        return videos.firstOrNull { it.height <= preferHeight } ?: videos.lastOrNull() ?: options.firstOrNull()
+    }
 
     fun label(height: Int, fps: Int): String = if (fps > 30) "${height}p$fps" else "${height}p"
 

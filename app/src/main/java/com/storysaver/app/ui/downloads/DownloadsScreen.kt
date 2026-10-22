@@ -58,6 +58,11 @@ import com.storysaver.app.model.MediaType
 import com.storysaver.app.model.SavedMedia
 import com.storysaver.app.ui.MediaIntents
 import com.storysaver.app.ui.components.MediaThumb
+import com.storysaver.app.ui.components.ProgressBlock
+import com.storysaver.app.downloads.ActiveJob
+import com.storysaver.app.downloads.JobState
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.platform.testTag
 import com.storysaver.app.util.formatBytes
 import java.text.DateFormat
 import java.util.Date
@@ -65,6 +70,7 @@ import java.util.Date
 @Composable
 fun DownloadsScreen(vm: DownloadsViewModel, modifier: Modifier = Modifier) {
     val items by vm.items.collectAsStateWithLifecycle()
+    val active by vm.active.collectAsStateWithLifecycle()
     val message by vm.message.collectAsStateWithLifecycle()
     val consent by vm.consent.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
@@ -91,7 +97,7 @@ fun DownloadsScreen(vm: DownloadsViewModel, modifier: Modifier = Modifier) {
         topBar = { TopAppBar(title = { Text("Downloads") }) },
         snackbarHost = { SnackbarHost(snackbar) },
     ) { padding ->
-        if (items.isEmpty()) {
+        if (items.isEmpty() && active.isEmpty()) {
             EmptyState(Modifier.padding(padding))
         } else {
             LazyColumn(
@@ -99,6 +105,11 @@ fun DownloadsScreen(vm: DownloadsViewModel, modifier: Modifier = Modifier) {
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.padding(padding).fillMaxSize(),
             ) {
+                if (active.isNotEmpty()) {
+                    item { Text("In progress", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary) }
+                    items(active, key = { it.id.toString() }) { job -> ActiveRow(job, onCancel = { vm.cancelJob(job.id) }) }
+                    item { Spacer(Modifier.height(4.dp)) }
+                }
                 items(items, key = { it.id }) { media ->
                     DownloadRow(media, onDelete = { toDelete = media })
                 }
@@ -122,6 +133,21 @@ fun DownloadsScreen(vm: DownloadsViewModel, modifier: Modifier = Modifier) {
 }
 
 @Composable
+private fun ActiveRow(job: ActiveJob, onCancel: () -> Unit) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+        Column(Modifier.padding(12.dp).testTag("active_job")) {
+            Text(job.title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium,
+                maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val (step, progress) = when (val st = job.state) {
+                is JobState.Running -> st.step to st.progress
+                else -> "Waiting" to null
+            }
+            ProgressBlock("$step…", progress, onCancel = onCancel)
+        }
+    }
+}
+
+@Composable
 private fun DownloadRow(media: SavedMedia, onDelete: () -> Unit) {
     val context = LocalContext.current
     val uri = Uri.parse(media.uri)
@@ -130,7 +156,7 @@ private fun DownloadRow(media: SavedMedia, onDelete: () -> Unit) {
     }
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
         Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            MediaThumb(model = uri, isVideo = media.mediaType == MediaType.VIDEO, modifier = Modifier.size(64.dp))
+            MediaThumb(model = uri, isVideo = media.mediaType == MediaType.VIDEO, modifier = Modifier.size(64.dp), isAudio = media.isAudio)
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(media.displayName, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium,

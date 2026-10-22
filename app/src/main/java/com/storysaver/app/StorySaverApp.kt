@@ -6,6 +6,8 @@ import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.decode.VideoFrameDecoder
 import com.storysaver.app.data.DirectMediaDownloader
+import com.storysaver.app.downloads.DownloadJobs
+import com.storysaver.app.downloads.DownloadNotifications
 import com.storysaver.app.data.HistoryRepository
 import com.storysaver.app.data.MediaSaver
 import com.storysaver.app.data.SettingsRepository
@@ -28,6 +30,8 @@ class StorySaverApp : Application(), ImageLoaderFactory {
         container = AppContainer(this)
         container.downloader.clearCache()
         container.youtubeCacheDir.deleteRecursively()
+        java.io.File(cacheDir, "jobs").deleteRecursively() // leftovers from a killed process
+        DownloadNotifications.createChannel(this)
     }
 
     /** Coil loader that can also draw a frame from videos for thumbnails. */
@@ -65,6 +69,9 @@ class AppContainer(context: Context) {
         httpClient.newBuilder().readTimeout(60, TimeUnit.SECONDS).build()
     )
     val youtubeCacheDir = File(app.cacheDir, "youtube")
+
+    /** Background downloads (keep running when the app is closed). */
+    val jobs = DownloadJobs(app, history)
 }
 
 val Context.appContainer: AppContainer

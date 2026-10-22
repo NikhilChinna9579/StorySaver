@@ -6,6 +6,9 @@ import androidx.lifecycle.viewModelScope
 import com.storysaver.app.AppContainer
 import com.storysaver.app.data.MediaSaver
 import com.storysaver.app.data.SharedItem
+import com.storysaver.app.downloads.DownloadRequest
+import com.storysaver.app.downloads.JobState
+import java.util.UUID
 import com.storysaver.app.model.Platform
 import com.storysaver.app.model.SavedMedia
 import com.storysaver.app.util.Progress
@@ -24,6 +27,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -54,6 +59,7 @@ class YouTubeViewModel(private val c: AppContainer) : ViewModel() {
     private val _state = MutableStateFlow(YtUiState())
     val state: StateFlow<YtUiState> = _state.asStateFlow()
     private var job: Job? = null
+    private var jobId: UUID? = null
 
     init {
         (c.shareInbox.pending.value as? SharedItem.Text)?.let {
@@ -129,87 +135,37 @@ class YouTubeViewModel(private val c: AppContainer) : ViewModel() {
             _state.update { it.copy(requestStoragePermission = true) }
             return
         }
+        val request = DownloadRequest.YouTube(
+            title = if (q.audioOnly) "${video.title} · audio" else "${video.title} · ${q.label}",
+            videoUrl = q.video.url,
+            audioUrl = q.audio?.url,
+            videoLength = q.video.contentLength,
+            audioLength = q.audio?.contentLength ?: -1,
+            durationSeconds = video.durationSeconds,
+            qualityLabel = q.label,
+            audioOnly = q.audioOnly,
+        )
+        val id = c.jobs.enqueue(request)
+        jobId = id
+        _state.update { it.copy(job = YtJob.Working("Starting", null)) }
         job = viewModelScope.launch {
-            val dir = c.youtubeCacheDir.apply { mkdirs() }
-            val stamp = System.nanoTime()
-            val videoPart = File(dir, "v_$stamp.mp4")
-            val audioPart = File(dir, "a_$stamp.m4a")
-            val merged = File(dir, "out_$stamp.mp4")
-            try {
-                val needed = if (q.approxBytes > 0) q.approxBytes * 2 else 0
-                if (needed > 0 && dir.usableSpace < needed + 50L * 1024 * 1024) {
-                    fail("Not enough free storage. This needs about ${formatBytes(needed)} free while downloading.")
-                    return@launch
+            c.jobs.observe(id).onEach { st ->
+                _state.update {
+                    it.copy(job = when (st) {
+                        JobState.Queued -> YtJob.Working("Waiting", null)
+                        is JobState.Running -> YtJob.Working(st.step, st.progress)
+                        is JobState.Done -> st.media?.let { m -> YtJob.Saved(m) }
+                            ?: YtJob.Failed("Saved, but the file couldn't be found afterwards.")
+                        is JobState.Failed -> YtJob.Failed(st.message)
+                        JobState.Cancelled -> YtJob.Ready
+                    })
                 }
-
-                val result: File
-                if (q.needsMerge) {
-                    val audio = q.audio!!
-                    val vLen = q.video.contentLength
-                    val aLen = audio.contentLength
-                    val totalLen = if (vLen > 0 && aLen > 0) vLen + aLen else -1L
-                    step("Downloading video", 0f)
-                    c.chunkedDownloader.download(q.video.url, YouTubeExtractor.userAgentFor(q.video.url), videoPart, vLen) { done, total ->
-                        val p = if (totalLen > 0) Progress.fraction(done, totalLen) else Progress.fraction(done, total)
-                        step("Downloading video", p)
-                    }
-                    step("Downloading audio", if (totalLen > 0) Progress.fraction(vLen, totalLen) else null)
-                    c.chunkedDownloader.download(audio.url, YouTubeExtractor.userAgentFor(audio.url), audioPart, aLen) { done, total ->
-                        val p = if (totalLen > 0) Progress.fraction(vLen + done, totalLen) else Progress.fraction(done, total)
-                        step("Downloading audio", p)
-                    }
-                    step("Merging video and audio", 0f)
-                    withContext(Dispatchers.IO) {
-                        Mp4Merger.merge(videoPart, audioPart, merged, video.durationSeconds * 1_000_000) { p ->
-                            step("Merging video and audio", p)
-                        }
-                    }
-                    videoPart.delete(); audioPart.delete()
-                    result = merged
-                } else {
-                    step("Downloading video", 0f)
-                    c.chunkedDownloader.download(q.video.url, YouTubeExtractor.userAgentFor(q.video.url), merged, q.video.contentLength) { done, total ->
-                        step("Downloading video", Progress.fraction(done, total))
-                    }
-                    result = merged
-                }
-
-                step("Saving", null)
-                when (val outcome = c.saver.save(Uri.fromFile(result), "video/mp4", Platform.YOUTUBE) { p -> step("Saving", p) }) {
-                    is MediaSaver.Outcome.Saved -> {
-                        c.history.add(outcome.media)
-                        _state.update { it.copy(job = YtJob.Saved(outcome.media)) }
-                    }
-                    is MediaSaver.Outcome.Failed -> fail(outcome.message)
-                    MediaSaver.Outcome.NeedsStoragePermission -> {
-                        _state.update { it.copy(job = YtJob.Ready, requestStoragePermission = true) }
-                    }
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: ChunkedDownloader.HttpError) {
-                fail(
-                    if (e.code == 403) "YouTube refused the download (HTTP 403). The link may have expired — tap Find video again and retry."
-                    else "YouTube's server returned an error (HTTP ${e.code}). Please try again."
-                )
-            } catch (e: IOException) {
-                val msg = e.message.orEmpty()
-                fail(
-                    if (msg.contains("ENOSPC") || msg.contains("No space", true)) "Your phone ran out of storage during the download."
-                    else "The download failed: ${msg.ifBlank { "network error" }}. Check your connection and try again."
-                )
-            } finally {
-                videoPart.delete(); audioPart.delete(); merged.delete()
-            }
+            }.first { it.finished }
         }
     }
 
-    private fun step(name: String, progress: Float?) =
-        _state.update { if (it.job is YtJob.Saved) it else it.copy(job = YtJob.Working(name, progress)) }
-
-    private fun fail(message: String) = _state.update { it.copy(job = YtJob.Failed(message)) }
-
     fun cancel() {
+        jobId?.let { c.jobs.cancel(it) }
         job?.cancel()
         _state.update {
             it.copy(resolving = false, job = if (it.job is YtJob.Working) YtJob.Ready else it.job)

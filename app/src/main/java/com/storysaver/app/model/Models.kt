@@ -35,4 +35,6 @@ data class SavedMedia(
 ) {
     val mediaType: MediaType
         get() = if (mimeType.startsWith("video/")) MediaType.VIDEO else MediaType.IMAGE
+
+    val isAudio: Boolean get() = mimeType.startsWith("audio/")
 }

@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.storysaver.app.ui.components.BannerKind
 import com.storysaver.app.ui.components.LegacyStoragePermissionEffect
+import com.storysaver.app.ui.components.rememberNotificationPermissionAsker
 import com.storysaver.app.ui.components.MediaThumb
 import com.storysaver.app.ui.components.MessageBanner
 import com.storysaver.app.ui.components.ProgressBlock
@@ -69,6 +70,7 @@ fun YouTubeScreen(vm: YouTubeViewModel, onBack: () -> Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
     val clipboard = LocalClipboardManager.current
     val busy = state.busy
+    val askNotifications = rememberNotificationPermissionAsker()
 
     LegacyStoragePermissionEffect(state.requestStoragePermission, vm::onStoragePermissionResult)
 
@@ -129,12 +131,12 @@ fun YouTubeScreen(vm: YouTubeViewModel, onBack: () -> Unit) {
             val video = state.video
             when {
                 state.resolving -> ProgressBlock("Looking up the video…", null, onCancel = vm::cancel)
-                video != null -> VideoCard(video, state, vm)
+                video != null -> VideoCard(video, state, vm, onDownload = { askNotifications(); vm.download() })
                 state.error == null -> MessageBanner(
                     BannerKind.INFO, "How to use",
                     "In YouTube, open a video → Share → Copy link, then tap Paste here. Pick a resolution and tap " +
                         "Download. You can also use Share → Story Saver straight from YouTube.\n\n" +
-                        "Up to 1080p (MP4). Only download videos you have the right to keep — your own uploads, " +
+                        "Up to 1080p (MP4), or audio only (M4A). Downloads keep running in the background. Only download videos you have the right to keep — your own uploads, " +
                         "Creative Commons videos, or with the creator's permission.",
                 )
             }
@@ -143,7 +145,7 @@ fun YouTubeScreen(vm: YouTubeViewModel, onBack: () -> Unit) {
 }
 
 @Composable
-private fun VideoCard(video: YtVideo, state: YtUiState, vm: YouTubeViewModel) {
+private fun VideoCard(video: YtVideo, state: YtUiState, vm: YouTubeViewModel, onDownload: () -> Unit) {
     val job = state.job
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         MediaThumb(
@@ -169,7 +171,7 @@ private fun VideoCard(video: YtVideo, state: YtUiState, vm: YouTubeViewModel) {
 
         when (job) {
             YtJob.Ready -> Button(
-                onClick = vm::download, enabled = state.selected != null,
+                onClick = onDownload, enabled = state.selected != null,
                 modifier = Modifier.fillMaxWidth().height(52.dp).testTag("yt_download"),
             ) {
                 Icon(Icons.Outlined.Download, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -182,7 +184,7 @@ private fun VideoCard(video: YtVideo, state: YtUiState, vm: YouTubeViewModel) {
             }
             is YtJob.Failed -> {
                 MessageBanner(BannerKind.ERROR, "Download failed", job.message)
-                OutlinedButton(onClick = vm::download, modifier = Modifier.fillMaxWidth()) { Text("Try again") }
+                OutlinedButton(onClick = onDownload, modifier = Modifier.fillMaxWidth()) { Text("Try again") }
             }
         }
     }
@@ -199,7 +201,7 @@ private fun QualityRow(q: YtQuality, selected: Boolean, enabled: Boolean, onClic
         Spacer(Modifier.width(8.dp))
         Text(q.label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
         Text(
-            if (q.approxBytes > 0) "MP4 · ${formatBytes(q.approxBytes)}" else "MP4",
+            (if (q.audioOnly) "M4A" else "MP4") + if (q.approxBytes > 0) " · ${formatBytes(q.approxBytes)}" else "",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(end = 12.dp),
         )

@@ -25,6 +25,7 @@ import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material.icons.outlined.Search
@@ -59,6 +60,7 @@ import com.storysaver.app.model.MediaType
 import com.storysaver.app.ui.MediaIntents
 import com.storysaver.app.ui.components.BannerKind
 import com.storysaver.app.ui.components.LegacyStoragePermissionEffect
+import com.storysaver.app.ui.components.rememberNotificationPermissionAsker
 import com.storysaver.app.ui.components.MediaThumb
 import com.storysaver.app.ui.components.MessageBanner
 import com.storysaver.app.ui.components.ProgressBlock
@@ -69,6 +71,7 @@ fun InstagramScreen(vm: InstagramViewModel, onBack: () -> Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
     val clipboard = LocalClipboardManager.current
     val busy = state.busy
+    val askNotifications = rememberNotificationPermissionAsker()
 
     LegacyStoragePermissionEffect(state.requestStoragePermission, vm::onStoragePermissionResult)
 
@@ -138,14 +141,19 @@ fun InstagramScreen(vm: InstagramViewModel, onBack: () -> Unit) {
             when (val phase = state.phase) {
                 IgPhase.Idle -> if (state.unsupported == null && state.error == null) HowItWorks()
                 IgPhase.Resolving -> ProgressBlock("Looking up the post…", null, onCancel = vm::cancel)
-                is IgPhase.Found -> FoundPost(phase, onSave = vm::save, onSaveAll = vm::saveAll, onCancel = vm::cancel)
+                is IgPhase.Found -> FoundPost(
+                    phase,
+                    onSave = { i, audio -> askNotifications(); vm.save(i, audio) },
+                    onSaveAll = { askNotifications(); vm.saveAll() },
+                    onCancel = vm::cancel,
+                )
             }
         }
     }
 }
 
 @Composable
-private fun FoundPost(found: IgPhase.Found, onSave: (Int) -> Unit, onSaveAll: () -> Unit, onCancel: () -> Unit) {
+private fun FoundPost(found: IgPhase.Found, onSave: (Int, Boolean) -> Unit, onSaveAll: () -> Unit, onCancel: () -> Unit) {
     val items = found.items
     val images = items.count { it.item.type == MediaType.IMAGE }
     val videos = items.size - images
@@ -172,12 +180,17 @@ private fun FoundPost(found: IgPhase.Found, onSave: (Int) -> Unit, onSaveAll: ()
                 Button(onClick = onSaveAll, enabled = !anyActive) { Text("Save all") }
             }
         }
-        items.forEach { ui -> ItemCard(ui, onSave = { onSave(ui.item.index) }, onCancel = onCancel, label = if (items.size > 1) "${ui.item.index + 1}/${items.size}" else null, enabled = !anyActive) }
+        items.forEach { ui ->
+            ItemCard(
+                ui, onSave = { audio -> onSave(ui.item.index, audio) }, onCancel = onCancel,
+                label = if (items.size > 1) "${ui.item.index + 1}/${items.size}" else null, enabled = !anyActive,
+            )
+        }
     }
 }
 
 @Composable
-private fun ItemCard(ui: IgItemUi, onSave: () -> Unit, onCancel: () -> Unit, label: String?, enabled: Boolean) {
+private fun ItemCard(ui: IgItemUi, onSave: (audioOnly: Boolean) -> Unit, onCancel: () -> Unit, label: String?, enabled: Boolean) {
     val context = LocalContext.current
     val item = ui.item
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
@@ -193,18 +206,29 @@ private fun ItemCard(ui: IgItemUi, onSave: () -> Unit, onCancel: () -> Unit, lab
                 style = MaterialTheme.typography.labelLarge,
             )
             when (val s = ui.state) {
-                IgItemState.Ready -> Button(
-                    onClick = onSave, enabled = enabled,
-                    modifier = Modifier.fillMaxWidth().height(50.dp).testTag("ig_save_${item.index}"),
-                ) {
-                    Icon(Icons.Outlined.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(8.dp)); Text("Save ${item.type.label.lowercase()}")
+                IgItemState.Ready -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Button(
+                        onClick = { onSave(false) }, enabled = enabled,
+                        modifier = Modifier.weight(1f).height(50.dp).testTag("ig_save_${item.index}"),
+                    ) {
+                        Icon(Icons.Outlined.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp)); Text("Save ${item.type.label.lowercase()}")
+                    }
+                    if (item.type == MediaType.VIDEO) {
+                        OutlinedButton(
+                            onClick = { onSave(true) }, enabled = enabled,
+                            modifier = Modifier.weight(1f).height(50.dp).testTag("ig_audio_${item.index}"),
+                        ) {
+                            Icon(Icons.Outlined.MusicNote, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp)); Text("Audio only")
+                        }
+                    }
                 }
-                is IgItemState.Downloading -> ProgressBlock("Downloading…", s.progress, onCancel = onCancel)
+                is IgItemState.Downloading -> ProgressBlock("${s.step}…", s.progress, onCancel = onCancel)
                 is IgItemState.Saving -> ProgressBlock("Saving…", s.progress)
                 is IgItemState.Failed -> {
                     MessageBanner(BannerKind.ERROR, "Couldn't save", s.message)
-                    OutlinedButton(onClick = onSave, enabled = enabled, modifier = Modifier.fillMaxWidth()) { Text("Try again") }
+                    OutlinedButton(onClick = { onSave(false) }, enabled = enabled, modifier = Modifier.fillMaxWidth()) { Text("Try again") }
                 }
                 is IgItemState.Saved -> {
                     val uri = Uri.parse(s.media.uri)

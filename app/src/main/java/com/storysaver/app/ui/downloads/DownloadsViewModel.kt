@@ -9,13 +9,23 @@ import com.storysaver.app.model.SavedMedia
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import com.storysaver.app.downloads.ActiveJob
+import java.util.UUID
 
 data class ConsentRequest(val media: SavedMedia, val intentSender: IntentSender)
 
 class DownloadsViewModel(private val c: AppContainer) : ViewModel() {
 
     val items: StateFlow<List<SavedMedia>> = c.history.items
+
+    /** Background downloads still running. */
+    val active: StateFlow<List<ActiveJob>> =
+        c.jobs.active().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun cancelJob(id: UUID) = c.jobs.cancel(id)
 
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()

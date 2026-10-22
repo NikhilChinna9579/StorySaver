@@ -37,6 +37,13 @@ object MimeUtils {
         "video/webm" to "webm",
         "video/x-matroska" to "mkv",
         "video/quicktime" to "mov",
+        "audio/mp4" to "m4a",
+        "audio/m4a" to "m4a",
+        "audio/x-m4a" to "m4a",
+        "audio/mpeg" to "mp3",
+        "audio/aac" to "aac",
+        "audio/webm" to "weba",
+        "audio/ogg" to "ogg",
     )
 
     /** Lower-case extension of a file name or URL path, ignoring any query string. */
@@ -72,9 +79,15 @@ object MimeUtils {
         return when {
             m.startsWith("image/") -> "jpg"
             m.startsWith("video/") -> "mp4"
+            m.startsWith("audio/") -> "m4a"
             else -> "bin"
         }
     }
+
+    fun isAudio(mime: String?): Boolean = normalize(mime)?.startsWith("audio/") == true
+
+    /** Images, videos and audio — everything the app can save. */
+    fun isSavable(mime: String?): Boolean = typeFromMime(mime) != null || isAudio(mime)
 
     /** Detects a media type from a file's first bytes (at least 12 needed for MP4/WebP). */
     fun sniff(header: ByteArray): String? {

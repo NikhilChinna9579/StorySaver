@@ -64,9 +64,42 @@ class MediaSaver(private val context: Context, private val settings: SettingsRep
             ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) !=
             PackageManager.PERMISSION_GRANTED
 
-    fun destinationLabel(type: MediaType): String {
+    fun destinationLabel(type: MediaType): String =
+        destinationLabel(if (type == MediaType.IMAGE) Kind.IMAGE else Kind.VIDEO)
+
+    /** Where a file of this MIME type will be saved, e.g. "Music/StorySaver". */
+    fun destinationLabelFor(mime: String): String = destinationLabel(kindOf(mime) ?: Kind.VIDEO)
+
+    private fun destinationLabel(kind: Kind): String {
         settings.usableCustomDestination()?.let { return folderLabel(it) }
-        return if (type == MediaType.IMAGE) "Pictures/$FOLDER" else "Movies/$FOLDER"
+        return "${kind.directory}/$FOLDER"
+    }
+
+    /** Which public collection a file belongs in. */
+    private enum class Kind(val label: String, val directory: String) {
+        IMAGE("image", Environment.DIRECTORY_PICTURES),
+        VIDEO("video", Environment.DIRECTORY_MOVIES),
+        AUDIO("audio file", Environment.DIRECTORY_MUSIC);
+
+        @RequiresApi(Build.VERSION_CODES.Q)
+        fun collection(): Uri = when (this) {
+            IMAGE -> MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            VIDEO -> MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            AUDIO -> MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        }
+
+        fun legacyCollection(): Uri = when (this) {
+            IMAGE -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+            VIDEO -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+            AUDIO -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
+        }
+    }
+
+    private fun kindOf(mime: String): Kind? = when {
+        MimeUtils.isAudio(mime) -> Kind.AUDIO
+        MimeUtils.typeFromMime(mime) == MediaType.IMAGE -> Kind.IMAGE
+        MimeUtils.typeFromMime(mime) == MediaType.VIDEO -> Kind.VIDEO
+        else -> null
     }
 
     suspend fun save(
@@ -75,15 +108,15 @@ class MediaSaver(private val context: Context, private val settings: SettingsRep
         platform: Platform,
         onProgress: (Float?) -> Unit = {},
     ): Outcome = withContext(Dispatchers.IO) {
-        val type = MimeUtils.typeFromMime(mimeType)
-            ?: return@withContext Outcome.Failed("Only images and videos can be saved.")
+        val type = kindOf(mimeType)
+            ?: return@withContext Outcome.Failed("Only images, videos and audio can be saved.")
         if (needsLegacyPermission()) return@withContext Outcome.NeedsStoragePermission
 
         val sourceMeta = UriInfo.meta(context, source)
         val custom = settings.usableCustomDestination()
         if (custom == null && sourceMeta.size > 0 && !hasGallerySpaceFor(sourceMeta.size)) {
             return@withContext Outcome.Failed(
-                "Not enough free storage to save this ${type.label.lowercase()} " +
+                "Not enough free storage to save this ${type.label} " +
                     "(${com.storysaver.app.util.formatBytes(sourceMeta.size)} needed)."
             )
         }
@@ -113,17 +146,11 @@ class MediaSaver(private val context: Context, private val settings: SettingsRep
 
     @RequiresApi(Build.VERSION_CODES.Q)
     private suspend fun saveToMediaStore(
-        source: Uri, name: String, mime: String, type: MediaType, total: Long,
+        source: Uri, name: String, mime: String, type: Kind, total: Long,
         platform: Platform, onProgress: (Float?) -> Unit,
     ): Outcome {
-        val collection = if (type == MediaType.IMAGE) {
-            MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-        } else {
-            MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
-        }
-        val relativePath =
-            (if (type == MediaType.IMAGE) Environment.DIRECTORY_PICTURES else Environment.DIRECTORY_MOVIES) +
-                "/" + FOLDER
+        val collection = type.collection()
+        val relativePath = type.directory + "/" + FOLDER
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, name)
             put(MediaStore.MediaColumns.MIME_TYPE, mime)
@@ -150,12 +177,10 @@ class MediaSaver(private val context: Context, private val settings: SettingsRep
 
     @Suppress("DEPRECATION")
     private suspend fun saveLegacy(
-        source: Uri, name: String, mime: String, type: MediaType, total: Long,
+        source: Uri, name: String, mime: String, type: Kind, total: Long,
         platform: Platform, onProgress: (Float?) -> Unit,
     ): Outcome {
-        val base = Environment.getExternalStoragePublicDirectory(
-            if (type == MediaType.IMAGE) Environment.DIRECTORY_PICTURES else Environment.DIRECTORY_MOVIES
-        )
+        val base = Environment.getExternalStoragePublicDirectory(type.directory)
         val dir = File(base, FOLDER)
         if (!dir.exists() && !dir.mkdirs()) return Outcome.Failed("Couldn't create the folder ${dir.path}.")
         val finalName = FileNaming.dedupe(name) { File(dir, it).exists() }
@@ -193,18 +218,14 @@ class MediaSaver(private val context: Context, private val settings: SettingsRep
     }
 
     @Suppress("DEPRECATION")
-    private fun insertLegacy(file: File, name: String, mime: String, type: MediaType): Uri? {
+    private fun insertLegacy(file: File, name: String, mime: String, type: Kind): Uri? {
         val values = ContentValues().apply {
             put(MediaStore.MediaColumns.DATA, file.absolutePath)
             put(MediaStore.MediaColumns.DISPLAY_NAME, name)
             put(MediaStore.MediaColumns.MIME_TYPE, mime)
             put(MediaStore.MediaColumns.SIZE, file.length())
         }
-        val collection = if (type == MediaType.IMAGE) {
-            MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-        } else {
-            MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-        }
+        val collection = type.legacyCollection()
         return runCatching { resolver.insert(collection, values) }.getOrNull()
     }
 

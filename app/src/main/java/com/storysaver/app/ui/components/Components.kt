@@ -22,6 +22,7 @@ import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.MusicNote
 import androidx.compose.material.icons.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.PlayCircle
 import androidx.compose.material.icons.outlined.Share
@@ -170,7 +171,22 @@ fun ProgressBlock(label: String, progress: Float?, modifier: Modifier = Modifier
 
 /** Thumbnail/preview for an image or video (video shows its first frame + a play badge). */
 @Composable
-fun MediaThumb(model: Any, isVideo: Boolean, modifier: Modifier = Modifier, contentScale: ContentScale = ContentScale.Crop) {
+fun MediaThumb(
+    model: Any,
+    isVideo: Boolean,
+    modifier: Modifier = Modifier,
+    contentScale: ContentScale = ContentScale.Crop,
+    isAudio: Boolean = false,
+) {
+    if (isAudio) {
+        Box(
+            modifier.clip(MaterialTheme.shapes.medium).background(MaterialTheme.colorScheme.secondaryContainer),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Outlined.MusicNote, contentDescription = "Audio", tint = MaterialTheme.colorScheme.onSecondaryContainer)
+        }
+        return
+    }
     Box(modifier.clip(MaterialTheme.shapes.medium).background(MaterialTheme.colorScheme.surfaceVariant)) {
         SubcomposeAsyncImage(
             model = model,

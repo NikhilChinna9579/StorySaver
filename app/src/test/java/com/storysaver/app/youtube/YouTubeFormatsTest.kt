@@ -26,7 +26,7 @@ class YouTubeFormatsTest {
 
     @Test fun offersH264ResolutionsUpTo1080() {
         val q = YouTubeFormats.qualities(typical)
-        assertEquals(listOf("1080p60", "720p60", "480p", "360p", "240p", "144p"), q.map { it.label })
+        assertEquals(listOf("1080p60", "720p60", "480p", "360p", "240p", "144p", "Audio only"), q.map { it.label })
     }
 
     @Test fun prefersCombinedStreamAtSameHeight() {
@@ -48,7 +48,17 @@ class YouTubeFormatsTest {
         val q = YouTubeFormats.qualities(listOf(
             v(720, "avc1", progressive = false), v(1080, "vp9", "video/webm"), a("mp4a.40.2", "audio/mp4", 128_000),
         ))
-        assertTrue(q.isEmpty())
+        assertEquals(listOf("Audio only"), q.map { it.label }) // no usable video, but audio still offered
+        assertTrue(YouTubeFormats.qualities(listOf(v(720, "avc1", progressive = false))).isEmpty())
+    }
+
+    @Test fun audioOnlyOptionUsesBestOriginalAac() {
+        val audio = YouTubeFormats.qualities(typical).last()
+        assertTrue(audio.audioOnly)
+        assertTrue(!audio.needsMerge)
+        assertEquals("audio/mp4", audio.video.mime)
+        assertEquals(129_000, audio.video.bitrate)
+        assertEquals(3_000_000, audio.approxBytes)
     }
 
     @Test fun withoutAacOnlyCombinedStreams() {
@@ -58,7 +68,7 @@ class YouTubeFormatsTest {
 
     @Test fun unknownSizeIsMinusOne() {
         val q = YouTubeFormats.qualities(listOf(v(720, "avc1", len = -1), a("mp4a.40.2", "audio/mp4", 128_000)))
-        assertEquals(-1, q.single().approxBytes)
+        assertEquals(-1, q.first { !it.audioOnly }.approxBytes)
     }
 
     @Test fun defaultChoice() {
@@ -66,5 +76,8 @@ class YouTubeFormatsTest {
         assertEquals("720p60", YouTubeFormats.defaultChoice(q)!!.label)
         assertEquals("144p", YouTubeFormats.defaultChoice(q, preferHeight = 100)!!.label)
         assertNull(YouTubeFormats.defaultChoice(emptyList()))
+        // Never preselect audio-only when a video exists; fall back to it only if it's all there is.
+        val audioOnly = YouTubeFormats.qualities(listOf(a("mp4a.40.2", "audio/mp4", 128_000)))
+        assertEquals("Audio only", YouTubeFormats.defaultChoice(audioOnly)!!.label)
     }
 }
