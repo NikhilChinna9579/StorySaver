@@ -25,7 +25,7 @@ class Mp4MergerTest {
     private val ctx = InstrumentationRegistry.getInstrumentation().targetContext
     private val dir = File(ctx.getExternalFilesDir(null), "fixtures")
 
-    @Test fun mergesSplitVideoAndAudioIntoOnePlayableMp4() = runBlocking {
+    @Test fun mergesSplitVideoAndAudioIntoOnePlayableMp4(): Unit = runBlocking {
         val video = File(dir, "yt-video.mp4")
         val audio = File(dir, "yt-audio.m4a")
         assumeTrue("fixtures not pushed", video.exists() && audio.exists())
@@ -55,7 +55,7 @@ class Mp4MergerTest {
         out.delete()
     }
 
-    @Test fun corruptInputFailsCleanly() = runBlocking {
+    @Test fun corruptInputFailsCleanly(): Unit = runBlocking {
         val bad = File(ctx.cacheDir, "not-a-video.mp4").apply { writeText("definitely not mp4") }
         val out = File(ctx.cacheDir, "merged-bad.mp4")
         try {
