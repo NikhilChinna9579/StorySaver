@@ -7,6 +7,10 @@ mkdir -p "$OUT"
 PKG=com.storysaver.app
 adb wait-for-device
 adb shell settings put global window_animation_scale 0 || true
+# The stock launcher often stops responding on CI emulators and its dialog covers the screen.
+adb shell settings put global hide_error_dialogs 1 || true
+adb shell pm disable-user --user 0 com.google.android.apps.nexuslauncher > /dev/null 2>&1 || true
+sleep 15
 
 # ---- Fake WhatsApp status folders (main account + a second account) ----
 WA=/sdcard/Android/media/com.whatsapp/WhatsApp
@@ -46,16 +50,17 @@ adb shell am start -a android.intent.action.SEND -t text/plain \
 sleep 25
 adb exec-out screencap -p > "$OUT/30_share_link_flow.png"
 
-# ---- Share sheet: an image file shared into the app ----
-adb push fixtures/img2.jpg /sdcard/Download/shared-test.jpg
-adb shell content call --method scan_volume --uri content://media --arg external_primary > /dev/null 2>&1 || true
-sleep 3
+# ---- Share sheet: a video file shared into the app ----
+# Uses the reel the Instagram test saved (owned by the app). A shell-started share can't grant
+# access to files it doesn't own; real apps (Gallery, WhatsApp) grant it themselves.
 adb shell am force-stop "$PKG"
-URI=$(adb shell content query --uri content://media/external/file --projection _id --where "\"_display_name='shared-test.jpg'\"" | sed -n 's/.*_id=\([0-9]*\).*/\1/p' | head -1)
-if [ -n "$URI" ]; then
-  adb shell am start -a android.intent.action.SEND -t image/jpeg \
-    --eu android.intent.extra.STREAM "content://media/external/file/$URI" --grant-read-uri-permission -n "$PKG/.MainActivity"
-  sleep 8
+ID=$(adb shell content query --uri content://media/external/video/media --projection _id:_display_name \
+     | grep StorySaver_IG | sed -n 's/.*_id=\([0-9]*\).*/\1/p' | head -1)
+echo "shared video id: $ID" >> "$OUT/instrument.txt"
+if [ -n "$ID" ]; then
+  adb shell am start -a android.intent.action.SEND -t video/mp4 \
+    --eu android.intent.extra.STREAM "content://media/external/video/media/$ID" -n "$PKG/.MainActivity"
+  sleep 10
   adb exec-out screencap -p > "$OUT/31_share_file_flow.png"
 fi
 

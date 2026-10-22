@@ -37,10 +37,16 @@ class WhatsAppE2ETest {
         if (rule.hasText("Grant folder access")) {
             rule.onNodeWithText("Grant folder access").performClick()
             // System folder picker (DocumentsUI) opens in the WhatsApp folder.
-            val use = device.wait(Until.findObject(By.text(Pattern.compile("(?i)use this folder"))), 20_000)
+            var use: androidx.test.uiautomator.UiObject2? = null
+            val deadline = System.currentTimeMillis() + 30_000
+            while (use == null && System.currentTimeMillis() < deadline) {
+                dismissSystemDialogs()
+                use = device.wait(Until.findObject(By.text(Pattern.compile("(?i)use this folder"))), 3_000)
+            }
             Shots.take("21_folder_picker")
             assertTrue("Folder picker did not show 'Use this folder'", use != null)
-            use.click()
+            use!!.click()
+            dismissSystemDialogs()
             val allow = device.wait(Until.findObject(By.text(Pattern.compile("(?i)^allow$"))), 10_000)
             Shots.take("22_allow_dialog")
             allow?.click()

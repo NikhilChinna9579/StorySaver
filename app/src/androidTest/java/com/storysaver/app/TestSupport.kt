@@ -21,6 +21,16 @@ object Shots {
     }
 }
 
+/** Slow CI emulators sometimes show "<app> isn't responding" over everything; tap Wait. */
+fun dismissSystemDialogs() {
+    val device = UiDevice.getInstance(InstrumentationRegistry.getInstrumentation())
+    repeat(3) {
+        val wait = device.findObject(androidx.test.uiautomator.By.text("Wait")) ?: return
+        wait.click()
+        device.waitForIdle(1_000)
+    }
+}
+
 fun SemanticsNodeInteractionsProvider.hasTag(tag: String) =
     onAllNodesWithTag(tag, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
 
