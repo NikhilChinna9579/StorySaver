@@ -97,10 +97,11 @@ class MediaTrimmerTest {
 
     @Test fun keepsPortraitRotation(): Unit = runBlocking {
         val src = fixture("trim-rot.mp4")
-        assumeTrue("fixture isn't rotated", meta(src)["rotation"] == "90")
+        val rotation = meta(src)["rotation"]
+        assumeTrue("fixture isn't rotated ($rotation)", rotation != null && rotation != "0")
         val o = out("t5.mp4")
         MediaTrimmer.trim(src, o, TrimRange(2_000, 4_000), audioOnly = false) {}
-        assertEquals("90", meta(o)["rotation"])
+        assertEquals(rotation, meta(o)["rotation"])
     }
 
     @Test fun fragmentedYouTubeStyleFile(): Unit = runBlocking {

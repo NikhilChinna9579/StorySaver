@@ -50,13 +50,13 @@ class TrimE2ETest {
         rule.waitForTrimScreen()
         Shots.take("90_trim_screen")
         val full = ms("trim_end")
-        assumeTrue("reel too short to trim 4 s off", full > 8_000)
-        rule.tap("trim_start_plus", 4)  // start 2.0 s
-        rule.tap("trim_end_minus", 4)   // end 2.0 s before the end
+        assumeTrue("reel too short to trim", full > 3_000)
+        rule.tap("trim_start_plus", 2)  // start 1.0 s
+        rule.tap("trim_end_minus", 2)   // end 1.0 s before the end
         val start = ms("trim_start")
         val end = ms("trim_end")
-        assertEquals(2_000, start)
-        assertTrue("end=$end full=$full", end in full - 2_100..full - 1_900)
+        assertEquals(1_000, start)
+        assertTrue("end=$end full=$full", end in full - 1_100..full - 900)
         Shots.take("91_trim_selected")
 
         rule.onNodeWithTag("trim_confirm").performClick()
@@ -68,11 +68,11 @@ class TrimE2ETest {
         assertNotNull("clip never appeared", id)
         val uri = MediaQueries.uri(MediaQueries.VIDEOS, id!!)
         val name = MediaQueries.name(MediaQueries.VIDEOS, id)!!
-        assertTrue(name, name.startsWith("ndtv_instagram_DeyQf_PzHlD_clip_0m02s-") && name.endsWith(".mp4"))
+        assertTrue(name, name.startsWith("ndtv_instagram_DeyQf_PzHlD_clip_0m01s-") && name.endsWith(".mp4"))
         val d = MediaQueries.durationMs(uri)
         val len = end - start
-        // Starts at a keyframe at/before 2 s, so it can be a little longer than chosen — but never the whole reel.
-        assertTrue("clip=$d chosen=$len full=$full", d in len - 400..len + 2_500 && d < full - 1_500)
+        // Starts at a keyframe at/before 1 s, so it can be a little longer than chosen — but the end is cut exactly.
+        assertTrue("clip=$d chosen=$len full=$full", d in len - 400..len + 1_200 && d < full - 800)
         val mimes = MediaQueries.trackMimes(uri)
         assertTrue("tracks=$mimes", mimes.any { it.startsWith("video/") } && mimes.any { it.startsWith("audio/") })
     }
@@ -142,9 +142,9 @@ class TrimE2ETest {
         rule.onNodeWithTag("viewer_trim").performClick()
         rule.waitForTrimScreen()
         val full = ms("trim_end")
-        assumeTrue("video too short", full > 4_000)
-        rule.tap("trim_start_plus", 2)
-        rule.tap("trim_end_minus", 2)
+        assumeTrue("video too short", full > 2_500)
+        rule.tap("trim_start_plus")   // 0.5 s
+        rule.tap("trim_end_minus")    // 0.5 s before the end
         val len = ms("trim_end") - ms("trim_start")
         Shots.take("95_trim_saved_video")
         rule.onNodeWithTag("trim_confirm").performClick()
@@ -152,7 +152,9 @@ class TrimE2ETest {
         val id = MediaQueries.waitForNew(MediaQueries.VIDEOS, "%clip%", clipsBefore, 120_000)
         assertNotNull("clip of the saved video never appeared", id)
         val d = MediaQueries.durationMs(MediaQueries.uri(MediaQueries.VIDEOS, id!!))
-        assertTrue("clip=$d chosen=$len full=$full", d in len - 400..len + 2_500 && d < full)
+        assertTrue("clip=$d chosen=$len full=$full", d in len - 400..len + 700 && d < full)
+        val name = MediaQueries.name(MediaQueries.VIDEOS, id)!!
+        assertTrue(name, name.contains("_clip_0m00s-") && !name.contains("("))
         assertTrue("original must be kept", (videosBefore - MediaQueries.ids(MediaQueries.VIDEOS)).isEmpty())
         scenario.close()
     }

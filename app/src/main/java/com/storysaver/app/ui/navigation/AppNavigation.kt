@@ -195,7 +195,8 @@ private fun saveClip(
         android.widget.Toast.makeText(context, "Move the start or end to choose a part to save.", android.widget.Toast.LENGTH_LONG).show()
         return
     }
-    val stem = m.displayName.substringBeforeLast('.').ifBlank { "clip" }
+    // "name (2).mp4" → "name": the copy number would otherwise end up in the middle of the clip's name.
+    val stem = m.displayName.substringBeforeLast('.').replace(Regex(" \\(\\d+\\)$"), "").ifBlank { "clip" }
     c.jobs.enqueue(com.storysaver.app.downloads.DownloadRequest.Local(
         uri = m.uri, mime = m.mimeType,
         title = stem + (if (extractAudio) " · audio" else "") + if (range != null) " · clip" else "",
