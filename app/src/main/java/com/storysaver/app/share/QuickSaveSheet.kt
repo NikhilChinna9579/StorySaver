@@ -64,6 +64,9 @@ import com.storysaver.app.ui.theme.Accents
 import com.storysaver.app.util.formatBytes
 import com.storysaver.app.youtube.YtQuality
 
+/** Keeps the options and Download/Close buttons on screen without scrolling. */
+private val PREVIEW_HEIGHT = 240.dp
+
 @Composable
 fun QuickSaveSheet(vm: QuickSaveViewModel, onClose: () -> Unit, onOpenApp: () -> Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
@@ -135,7 +138,7 @@ private fun InstagramWindow(c: QsContent.Instagram, progress: QsProgress, vm: Qu
     if (items.size == 1) {
         val item = items.single()
         MediaThumb(item.thumbnailUrl ?: item.url, isVideo = item.type == MediaType.VIDEO,
-            modifier = Modifier.fillMaxWidth().aspectRatio(if (item.type == MediaType.VIDEO) 0.8f else 1f))
+            modifier = Modifier.fillMaxWidth().height(PREVIEW_HEIGHT))
     } else {
         Text("Choose what to download:", style = MaterialTheme.typography.bodyMedium)
         items.chunked(3).forEach { row ->
@@ -168,7 +171,8 @@ private fun InstagramWindow(c: QsContent.Instagram, progress: QsProgress, vm: Qu
 private fun YouTubeWindow(c: QsContent.YouTube, progress: QsProgress, vm: QuickSaveViewModel) {
     val locked = progress !is QsProgress.Idle && progress !is QsProgress.Failed
     Header(Icons.Outlined.Videocam, "Video", c.video.channel?.let { "$it on YouTube" } ?: "YouTube")
-    MediaThumb(c.video.thumbnailUrl ?: "", isVideo = true, modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f))
+    MediaThumb(c.video.thumbnailUrl ?: "", isVideo = true,
+        modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).heightIn(max = PREVIEW_HEIGHT))
     Text(c.video.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
     Text("Resolution", style = MaterialTheme.typography.titleSmall)
     c.video.qualities.forEach { q: YtQuality ->
@@ -185,7 +189,7 @@ private fun LocalWindow(c: QsContent.LocalFile, progress: QsProgress, vm: QuickS
     Header(if (c.isVideo) Icons.Outlined.Videocam else Icons.Outlined.Image, if (c.isVideo) "Video" else "Image",
         "${c.name} · ${formatBytes(c.size)}")
     MediaThumb(c.uri, isVideo = c.isVideo, contentScale = ContentScale.Fit,
-        modifier = Modifier.fillMaxWidth().aspectRatio(1f))
+        modifier = Modifier.fillMaxWidth().height(PREVIEW_HEIGHT))
     if (c.isVideo && c.canExtractAudio) {
         OptionRow("Video", "Keep as video", !c.audioOnly, !locked, "qs_opt_video") { vm.setAudioOnly(false) }
         OptionRow("Audio only", "M4A — just the sound", c.audioOnly, !locked, "qs_opt_audio") { vm.setAudioOnly(true) }
