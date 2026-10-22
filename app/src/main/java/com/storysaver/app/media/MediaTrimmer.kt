@@ -68,6 +68,7 @@ object MediaTrimmer {
             }
             class Src(val ex: MediaExtractor, val outTrack: Int, val isVideo: Boolean) {
                 var done = false
+                var written = 0L
             }
             val sources = tracks.map { track ->
                 val ex = open()
@@ -89,9 +90,13 @@ object MediaTrimmer {
             var lastPts = 0L
             while (true) {
                 currentCoroutineContext().ensureActive()
-                val src = sources.filter { !it.done }.minByOrNull { it.ex.sampleTime } ?: break
+                val src = sources.filter { !it.done }
+                    .minByOrNull { if (it.ex.sampleTrackIndex < 0) Long.MIN_VALUE else it.ex.sampleTime } ?: break
+                // End of track is sampleTrackIndex < 0. Times can legitimately be negative (an
+                // edit list moving AAC "priming" samples before 0), so a negative time is NOT the end.
+                if (src.ex.sampleTrackIndex < 0) { src.done = true; continue }
                 val t = src.ex.sampleTime
-                if (t < 0 || t >= endUs) { src.done = true; continue }
+                if (t >= endUs) { src.done = true; continue }
                 val pts = t - baseUs
                 if (pts < 0) { src.ex.advance(); continue } // leading B-frames / audio before the cut
                 buffer.clear()
@@ -102,11 +107,16 @@ object MediaTrimmer {
                 info.presentationTimeUs = pts
                 info.flags = if (src.ex.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC != 0) MediaCodec.BUFFER_FLAG_KEY_FRAME else 0
                 m.writeSampleData(src.outTrack, buffer, info)
+                src.written++
                 if (pts > lastPts) lastPts = pts
                 src.ex.advance()
                 if (++samples % 100 == 0L) onProgress((pts.toDouble() / spanUs).coerceIn(0.0, 1.0).toFloat())
             }
             if (samples == 0L) throw IOException("The chosen part is past the end of the file")
+            // An empty track makes some players reject the whole file, so never save one.
+            sources.firstOrNull { it.written == 0L }?.let {
+                throw IOException(if (it.isVideo) "No picture found in the chosen part" else "No sound found in the chosen part")
+            }
             m.stop()
             started = false
             onProgress(1f)
@@ -128,38 +138,32 @@ object MediaTrimmer {
         var ex = probe
         ex.selectTrack(track)
         ex.seekTo(startUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
-        if (ex.sampleTime !in 0..startUs) {
+        if (ex.sampleTrackIndex < 0 || ex.sampleTime > startUs) {
             // Seeking isn't reliable in every file (e.g. some fragmented MP4s): scan from the start instead.
             ex = open().also { it.selectTrack(track) }
         }
-        var lastSync = -1L
-        var first = -1L
-        while (true) {
+        var lastSync: Long? = null
+        var first: Long? = null
+        while (ex.sampleTrackIndex >= 0) {
             currentCoroutineContext().ensureActive()
             val t = ex.sampleTime
-            if (t < 0) break
-            if (first < 0) first = t
+            if (first == null) first = t
             val sync = ex.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC != 0
             if (sync && t <= startUs) lastSync = t
             if (sync && t > startUs) break
             ex.advance()
         }
-        return when {
-            lastSync >= 0 -> lastSync
-            first >= 0 -> first
-            else -> 0
-        }
+        return lastSync ?: first ?: 0
     }
 
-    /** Positions [ex] on the first sample to write: the keyframe at [baseUs] (video) or the first sample ≥ it. */
+    /** Positions [ex0] on the first sample to write: the keyframe at [baseUs] (video) or the first sample ≥ it. */
     private suspend fun positionAt(ex0: MediaExtractor, open: () -> MediaExtractor, track: Int, baseUs: Long, isVideo: Boolean): MediaExtractor {
         var ex = ex0
         ex.seekTo(baseUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
-        if (ex.sampleTime !in 0..baseUs) ex = open().also { it.selectTrack(track) }
-        while (true) {
+        if (ex.sampleTrackIndex < 0 || ex.sampleTime > baseUs) ex = open().also { it.selectTrack(track) }
+        while (ex.sampleTrackIndex >= 0) {
             currentCoroutineContext().ensureActive()
             val t = ex.sampleTime
-            if (t < 0) break
             val sync = ex.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC != 0
             if (isVideo && sync && t >= baseUs) break
             if (!isVideo && t >= baseUs) break

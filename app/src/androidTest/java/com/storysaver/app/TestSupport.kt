@@ -60,7 +60,7 @@ fun ComposeTestRule.waitForTrimScreen(timeoutMs: Long = 60_000) {
     waitUntil(timeoutMs) {
         hasTag("trim_error") || (hasTag("trim_end") && textOf("trim_end").let { it.isNotEmpty() && it != "0:00.0" })
     }
-    org.junit.Assert.assertFalse("trim preview failed to load", hasTag("trim_error"))
+    org.junit.Assert.assertFalse("trim preview failed to load: ${textOf("trim_error")}", hasTag("trim_error"))
 }
 
 /** Taps the node with [tag] [times] times. */

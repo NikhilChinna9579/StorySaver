@@ -129,6 +129,7 @@ fun TrimDialog(
     var durationMs by remember { mutableLongStateOf(source.knownDurationMs.coerceAtLeast(0)) }
     var ready by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf(false) }
+    var failure by remember { mutableStateOf("") }
     var playing by remember { mutableStateOf(false) }
     var position by remember { mutableLongStateOf(0L) }
     var start by remember { mutableLongStateOf(0L) }
@@ -145,7 +146,7 @@ fun TrimDialog(
                 }
             }
             override fun onIsPlayingChanged(isPlaying: Boolean) { playing = isPlaying }
-            override fun onPlayerError(error: PlaybackException) { failed = true }
+            override fun onPlayerError(error: PlaybackException) { failed = true; failure = error.errorCodeName }
         }
         player.addListener(listener)
         onDispose { player.removeListener(listener); player.release() }
@@ -204,7 +205,7 @@ fun TrimDialog(
                     if (failed) {
                         Text(
                             if (durationMs > 0) "The preview couldn't load, but you can still choose the start and end times."
-                            else "This couldn't be loaded for trimming. Close this and download the whole file instead.",
+                            else "This couldn't be loaded for trimming. Close this and download the whole file instead. ($failure)",
                             style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error,
                             modifier = Modifier.testTag("trim_error"),
                         )
