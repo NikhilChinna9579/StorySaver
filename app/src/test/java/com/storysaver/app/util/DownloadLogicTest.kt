@@ -71,6 +71,18 @@ class DownloadLogicTest {
         assertNull(MimeUtils.resolve(null, ".nomedia"))
     }
 
+    @Test fun sniffDetectsMediaFromHeaderBytes() {
+        fun bytes(vararg v: Int) = ByteArray(v.size) { v[it].toByte() }
+        fun ascii(s: String) = s.toByteArray(Charsets.US_ASCII)
+        assertEquals("image/jpeg", MimeUtils.sniff(bytes(0xFF, 0xD8, 0xFF, 0xE0)))
+        assertEquals("image/png", MimeUtils.sniff(bytes(0x89, 0x50, 0x4E, 0x47)))
+        assertEquals("image/webp", MimeUtils.sniff(ascii("RIFF") + bytes(0, 0, 0, 0) + ascii("WEBP")))
+        assertEquals("video/mp4", MimeUtils.sniff(bytes(0, 0, 0, 0x20) + ascii("ftypisom")))
+        assertEquals("image/heic", MimeUtils.sniff(bytes(0, 0, 0, 0x18) + ascii("ftypheic")))
+        assertNull(MimeUtils.sniff(ascii("hello world!")))
+        assertNull(MimeUtils.sniff(ByteArray(0)))
+    }
+
     @Test fun formatBytesIsReadable() {
         assertEquals("512 B", formatBytes(512))
         assertEquals("2 KB", formatBytes(2048))

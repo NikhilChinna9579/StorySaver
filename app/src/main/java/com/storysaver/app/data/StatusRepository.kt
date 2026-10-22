@@ -65,29 +65,52 @@ class StatusRepository(private val context: Context) {
     fun hasAccess(tree: Uri): Boolean =
         context.contentResolver.persistedUriPermissions.any { it.uri == tree && it.isReadPermission }
 
+    /** Everything found in the status folder, so the UI can explain what is and isn't shown. */
+    data class Scan(
+        val items: List<StatusItem>,
+        /** Files that aren't images/videos, or are unfinished downloads. */
+        val skipped: List<String>,
+    ) {
+        fun of(type: MediaType) = items.filter { it.mediaType == type }
+    }
+
     /**
-     * Lists images or videos in the granted folder, newest first. If the user picked a parent
-     * folder (e.g. "WhatsApp" or "Media"), we step down into `.Statuses` automatically.
+     * Lists every image and video in the granted folder, newest first. If the user picked a
+     * parent folder (e.g. "WhatsApp" or "Media"), we step down into `.Statuses` automatically.
+     * Files whose type can't be told from the name are identified by their first bytes.
      */
-    suspend fun list(tree: Uri, type: MediaType): List<StatusItem> = withContext(Dispatchers.IO) {
+    suspend fun scan(tree: Uri): Scan = withContext(Dispatchers.IO) {
         val rootId = DocumentsContract.getTreeDocumentId(tree)
         val folderId = findStatusesFolder(tree, rootId, depth = 0) ?: rootId
-        queryChildren(tree, folderId)
-            .asSequence()
-            .filter { !it.isDir && !it.name.startsWith(".") }
-            .mapNotNull { c ->
-                val mime = MimeUtils.resolve(c.mime, c.name) ?: return@mapNotNull null
-                if (MimeUtils.typeFromMime(mime) != type) return@mapNotNull null
-                StatusItem(
-                    uri = DocumentsContract.buildDocumentUriUsingTree(tree, c.docId),
-                    name = c.name,
-                    mimeType = mime,
-                    modified = c.modified,
-                    size = c.size,
-                )
+        val items = mutableListOf<StatusItem>()
+        val skipped = mutableListOf<String>()
+        for (c in queryChildren(tree, folderId)) {
+            if (c.isDir || c.name.equals(".nomedia", ignoreCase = true)) continue
+            val uri = DocumentsContract.buildDocumentUriUsingTree(tree, c.docId)
+            val mime = MimeUtils.resolve(c.mime, c.name) ?: sniffMime(uri)
+            if (mime == null || MimeUtils.typeFromMime(mime) == null || c.size == 0L) {
+                skipped += c.name
+                continue
             }
-            .sortedByDescending { it.modified }
-            .toList()
+            items += StatusItem(uri, c.name, mime, c.modified, c.size)
+        }
+        Scan(items.sortedByDescending { it.modified }, skipped)
+    }
+
+    /** Identifies JPEG / PNG / WebP / GIF / MP4-family files from their header bytes. */
+    private fun sniffMime(uri: Uri): String? = try {
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            val h = ByteArray(12)
+            var n = 0
+            while (n < h.size) {
+                val r = input.read(h, n, h.size - n)
+                if (r < 0) break
+                n += r
+            }
+            MimeUtils.sniff(h.copyOf(n))
+        }
+    } catch (_: Exception) {
+        null
     }
 
     /** Bounded search that only walks WhatsApp-like folder names, never the whole drive. */

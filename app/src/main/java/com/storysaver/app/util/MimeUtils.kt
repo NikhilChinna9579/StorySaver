@@ -76,6 +76,21 @@ object MimeUtils {
         }
     }
 
+    /** Detects a media type from a file's first bytes (at least 12 needed for MP4/WebP). */
+    fun sniff(header: ByteArray): String? {
+        fun b(i: Int) = if (i < header.size) header[i].toInt() and 0xFF else -1
+        fun ascii(from: Int, s: String) = s.indices.all { b(from + it) == s[it].code }
+        return when {
+            b(0) == 0xFF && b(1) == 0xD8 && b(2) == 0xFF -> "image/jpeg"
+            b(0) == 0x89 && ascii(1, "PNG") -> "image/png"
+            ascii(0, "GIF8") -> "image/gif"
+            ascii(0, "RIFF") && ascii(8, "WEBP") -> "image/webp"
+            ascii(4, "ftyp") -> if (ascii(8, "heic") || ascii(8, "heix") || ascii(8, "mif1")) "image/heic" else "video/mp4"
+            b(0) == 0x1A && b(1) == 0x45 && b(2) == 0xDF && b(3) == 0xA3 -> "video/webm"
+            else -> null
+        }
+    }
+
     /**
      * Picks a usable MIME type: the reported one when it is an image/video,
      * otherwise one derived from the file name (providers often report

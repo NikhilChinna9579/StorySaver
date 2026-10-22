@@ -7,6 +7,7 @@ import com.storysaver.app.AppContainer
 import com.storysaver.app.data.MediaSaver
 import com.storysaver.app.data.SharedItem
 import com.storysaver.app.data.StatusItem
+import com.storysaver.app.data.StatusRepository
 import com.storysaver.app.data.UriInfo
 import com.storysaver.app.model.MediaType
 import com.storysaver.app.model.Platform
@@ -29,6 +30,9 @@ data class LocalUiState(
     val folderLabel: String? = null,
     val loading: Boolean = false,
     val items: List<StatusItem> = emptyList(),
+    val imageCount: Int = 0,
+    val videoCount: Int = 0,
+    val skippedCount: Int = 0,
     val listedOnce: Boolean = false,
     val selected: StatusItem? = null,
     val saving: Boolean = false,
@@ -52,6 +56,8 @@ class LocalSaveViewModel(
     )
     val state: StateFlow<LocalUiState> = _state.asStateFlow()
     private var saveJob: Job? = null
+    private var lastScan: StatusRepository.Scan? = null
+    private var refreshJob: Job? = null
 
     init {
         if (platform == Platform.WHATSAPP) {
@@ -72,7 +78,8 @@ class LocalSaveViewModel(
             it.copy(mediaType = type, selected = null, saved = null, error = null,
                 destinationLabel = c.saver.destinationLabel(type))
         }
-        if (_state.value.folderGranted) refresh()
+        val scan = lastScan
+        if (scan != null) _state.update { it.copy(items = scan.of(type)) } else if (_state.value.folderGranted) refresh()
     }
 
     fun onFolderPicked(uri: Uri?) {
@@ -81,6 +88,8 @@ class LocalSaveViewModel(
             c.statuses.persistAccess(uri)
             c.settings.setStatusFolder(uri)
             _state.update { it.copy(folderGranted = true, folderLabel = c.saver.folderLabel(uri), error = null) }
+            refreshJob?.cancel()
+            lastScan = null
             refresh()
         } catch (e: SecurityException) {
             _state.update { it.copy(error = "Android didn't allow access to that folder. Try selecting it again.") }
@@ -89,17 +98,30 @@ class LocalSaveViewModel(
 
     fun forgetFolder() {
         c.settings.setStatusFolder(null)
+        lastScan = null
         _state.update { it.copy(folderGranted = false, folderLabel = null, items = emptyList(), listedOnce = false, selected = null) }
     }
 
-    fun refresh() {
+    /** Re-reads the status folder. [quiet] = no spinner (used when returning to the app). */
+    fun refresh(quiet: Boolean = false) {
         val folder = c.settings.statusFolder.value ?: return
-        val type = _state.value.mediaType
-        viewModelScope.launch {
-            _state.update { it.copy(loading = true, error = null) }
+        if (refreshJob?.isActive == true) return
+        refreshJob = viewModelScope.launch {
+            if (!quiet) _state.update { it.copy(loading = true, error = null) }
             try {
-                val items = c.statuses.list(folder, type)
-                _state.update { it.copy(loading = false, items = items, listedOnce = true) }
+                val scan = c.statuses.scan(folder)
+                lastScan = scan
+                _state.update {
+                    it.copy(
+                        loading = false, listedOnce = true,
+                        items = scan.of(it.mediaType),
+                        imageCount = scan.of(MediaType.IMAGE).size,
+                        videoCount = scan.of(MediaType.VIDEO).size,
+                        skippedCount = scan.skipped.size,
+                    )
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: SecurityException) {
                 c.settings.setStatusFolder(null)
                 _state.update {

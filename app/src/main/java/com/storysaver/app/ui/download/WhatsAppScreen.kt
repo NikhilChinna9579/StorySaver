@@ -56,6 +56,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.storysaver.app.data.StatusItem
 import com.storysaver.app.data.StatusRepository
@@ -82,6 +83,12 @@ fun WhatsAppScreen(vm: LocalSaveViewModel, statuses: StatusRepository, onBack: (
     }
 
     LegacyStoragePermissionEffect(state.requestStoragePermission, vm::onStoragePermissionResult)
+
+    // Coming back from WhatsApp after viewing more statuses: pick them up automatically.
+    LifecycleResumeEffect(state.folderGranted) {
+        if (state.folderGranted) vm.refresh(quiet = true)
+        onPauseOrDispose { }
+    }
 
     Scaffold(
         topBar = {
@@ -153,6 +160,19 @@ fun WhatsAppScreen(vm: LocalSaveViewModel, statuses: StatusRepository, onBack: (
                         }
                     }
                 }
+                if (state.listedOnce && !state.loading) {
+                    full {
+                        val skipped = if (state.skippedCount > 0) {
+                            " · ${state.skippedCount} other file${if (state.skippedCount == 1) "" else "s"} not shown (unfinished downloads or not media)"
+                        } else ""
+                        Text(
+                            "Found ${state.imageCount} image${if (state.imageCount == 1) "" else "s"} · " +
+                                "${state.videoCount} video${if (state.videoCount == 1) "" else "s"}$skipped",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
                 when {
                     state.loading -> full {
                         Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -161,8 +181,9 @@ fun WhatsAppScreen(vm: LocalSaveViewModel, statuses: StatusRepository, onBack: (
                         MessageBanner(
                             BannerKind.INFO,
                             "No ${state.mediaType.label.lowercase()} statuses found",
-                            "WhatsApp only keeps statuses you have already viewed, and removes them after about 24 hours. " +
-                                "Open WhatsApp, view the status, then tap Refresh.\n\n" +
+                            "WhatsApp only saves a status to this folder after it has downloaded it on your phone, and removes it after about 24 hours. " +
+                                "Video statuses are often only downloaded once you play them to the end. " +
+                                "Open WhatsApp, view the status fully, then come back — the list updates automatically.\n\n" +
                                 "If you chose the wrong folder, tap Change and select the “.Statuses” folder " +
                                 "(Android/media/com.whatsapp/WhatsApp/Media/.Statuses on most phones).",
                         )
