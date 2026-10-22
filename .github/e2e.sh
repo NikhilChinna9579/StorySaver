@@ -38,7 +38,7 @@ adb shell mkdir -p "$FX"
 adb push fixtures/yt-video.mp4 "$FX/yt-video.mp4"
 adb push fixtures/yt-audio.m4a "$FX/yt-audio.m4a"
 adb logcat -c
-for cls in SmokeTest Mp4MergerTest WhatsAppE2ETest InstagramE2ETest YouTubeE2ETest; do
+for cls in SmokeTest Mp4MergerTest WhatsAppE2ETest InstagramE2ETest BackgroundDownloadE2ETest ShareSheetE2ETest YouTubeE2ETest; do
   echo "=== $cls" >> "$OUT/instrument.txt"
   adb shell am instrument -w -e class "$PKG.$cls" "$PKG.test/androidx.test.runner.AndroidJUnitRunner" >> "$OUT/instrument.txt" 2>&1
 done
@@ -51,7 +51,7 @@ cp "$OUT"/shots/*.png "$OUT/" 2>/dev/null || true
 adb shell am force-stop "$PKG"
 adb shell am start -a android.intent.action.SEND -t text/plain \
   --es android.intent.extra.TEXT "'https://www.instagram.com/reel/DeyQf_PzHlD/?exln=dmcxMDJ0YmxzMnFn'" \
-  -n "$PKG/.MainActivity"
+  -n "$PKG/.share.ShareActivity"
 sleep 25
 adb exec-out screencap -p > "$OUT/30_share_link_flow.png"
 
@@ -64,7 +64,7 @@ ID=$(adb shell content query --uri content://media/external/video/media --projec
 echo "shared video id: $ID" >> "$OUT/instrument.txt"
 if [ -n "$ID" ]; then
   adb shell am start -a android.intent.action.SEND -t video/mp4 \
-    --eu android.intent.extra.STREAM "content://media/external/video/media/$ID" -n "$PKG/.MainActivity"
+    --eu android.intent.extra.STREAM "content://media/external/video/media/$ID" -n "$PKG/.share.ShareActivity"
   sleep 10
   adb exec-out screencap -p > "$OUT/31_share_file_flow.png"
 fi
@@ -73,6 +73,7 @@ fi
 {
   echo "Movies/StorySaver:"; adb shell ls -la /sdcard/Movies/StorySaver 2>&1
   echo "Pictures/StorySaver:"; adb shell ls -la /sdcard/Pictures/StorySaver 2>&1
+  echo "Music/StorySaver:"; adb shell ls -la /sdcard/Music/StorySaver 2>&1
 } > "$OUT/files.txt"
 adb logcat -d -v brief "*:E" | grep -iE "storysaver|AndroidRuntime|FATAL" | head -200 > "$OUT/logcat-errors.txt" || true
 adb logcat -d -v brief | grep -i "$PKG" | tail -400 > "$OUT/logcat-app.txt" || true
