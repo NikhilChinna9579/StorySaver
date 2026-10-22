@@ -6,6 +6,7 @@ import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.UiDevice
 import java.io.File
@@ -40,7 +41,8 @@ fun SemanticsNodeInteractionsProvider.hasText(text: String, substring: Boolean =
 /** Home → pick a media type and a source → Continue. */
 fun ComposeTestRule.openSource(type: String, source: String) {
     waitUntil(15_000) { hasText("Story Saver") }
-    onNodeWithText(type).performClick()
-    onNodeWithText(source).performClick()
-    onNodeWithText("Continue").performClick()
+    // The home screen scrolls (quick link box on top), so bring each control into view first.
+    onNodeWithText(type).performScrollTo().performClick()
+    onNodeWithText(source).performScrollTo().performClick()
+    onNodeWithText("Continue").performScrollTo().performClick()
 }

@@ -34,7 +34,7 @@ class ShareSheetE2ETest {
 
     /** Reel shared from Instagram → Video window → Audio only → download keeps going after the sheet closes. */
     @Test fun instagramReelAudioOnlyCompletesInBackground() {
-        val before = MediaQueries.ids(MediaQueries.AUDIO, "StorySaver_IG_")
+        val before = MediaQueries.ids(MediaQueries.AUDIO, "%instagram%")
         val scenario = shareText("https://www.instagram.com/reel/DeyQf_PzHlD/?igsh=e2e")
         rule.waitUntil(60_000) { rule.hasTag("qs_opt_audio") || rule.hasTag("qs_unsupported") }
         Shots.take("50_share_instagram_video_window")
@@ -49,10 +49,13 @@ class ShareSheetE2ETest {
         Shots.take("51_share_instagram_started")
 
         scenario.close() // the sheet is gone; the download must carry on
-        val id = MediaQueries.waitForNew(MediaQueries.AUDIO, "StorySaver_IG_", before, 180_000)
+        val id = MediaQueries.waitForNew(MediaQueries.AUDIO, "%instagram%", before, 180_000)
         assertNotNull("audio file never appeared after closing the sheet", id)
         val mimes = MediaQueries.trackMimes(MediaQueries.uri(MediaQueries.AUDIO, id!!))
         assertEquals("audio only", listOf("audio/mp4a-latm"), mimes)
+        // Readable name: account + "instagram" + post code + "audio"
+        val name = MediaQueries.name(MediaQueries.AUDIO, id)!!
+        assertTrue(name, name.startsWith("ndtv_instagram_DeyQf_PzHlD_audio") && name.endsWith(".m4a"))
     }
 
     @Test fun storyLinkIsExplained() {
@@ -65,7 +68,7 @@ class ShareSheetE2ETest {
 
     /** YouTube shared → resolutions + Audio only; skipped where YouTube blocks the network (CI). */
     @Test fun youtubeLinkShowsResolutionsAndSavesAudio() {
-        val before = MediaQueries.ids(MediaQueries.AUDIO, "StorySaver_YT_")
+        val before = MediaQueries.ids(MediaQueries.AUDIO)
         val scenario = shareText("https://youtu.be/jNQXAC9IVRw?si=e2e")
         rule.waitUntil(90_000) { rule.hasTag("qs_q_Audio only") || rule.hasTag("qs_unsupported") }
         Shots.take("53_share_youtube")
@@ -75,14 +78,14 @@ class ShareSheetE2ETest {
         rule.onNodeWithTag("qs_download").performScrollTo().performClick()
         rule.waitUntil(20_000) { rule.hasTag("qs_started") || rule.hasTag("qs_saved") }
         scenario.close()
-        assertNotNull(MediaQueries.waitForNew(MediaQueries.AUDIO, "StorySaver_YT_", before, 180_000))
+        assertNotNull(MediaQueries.waitForNew(MediaQueries.AUDIO, "%", before, 180_000))
     }
 
     /** An image file shared from the gallery → Image window → Save. */
     @Test fun sharedImageFileIsSaved() {
-        val source = MediaQueries.ids(MediaQueries.IMAGES, "StorySaver_").firstOrNull()
+        val source = MediaQueries.ids(MediaQueries.IMAGES).firstOrNull()
         assumeTrue("no image in the gallery to share (WhatsApp test saves one)", source != null)
-        val before = MediaQueries.ids(MediaQueries.IMAGES, "StorySaver_SHARE_")
+        val before = MediaQueries.ids(MediaQueries.IMAGES)
         val scenario = ActivityScenario.launch<ShareActivity>(
             Intent(ctx, ShareActivity::class.java).setAction(Intent.ACTION_SEND).setType("image/jpeg")
                 .putExtra(Intent.EXTRA_STREAM, MediaQueries.uri(MediaQueries.IMAGES, source!!))
@@ -94,7 +97,7 @@ class ShareSheetE2ETest {
         rule.onNodeWithTag("qs_download").performScrollTo().performClick()
         rule.waitUntil(30_000) { rule.hasTag("qs_saved") }
         Shots.take("55_share_image_saved")
-        assertNotNull(MediaQueries.waitForNew(MediaQueries.IMAGES, "StorySaver_SHARE_", before, 10_000))
+        assertNotNull(MediaQueries.waitForNew(MediaQueries.IMAGES, "%", before, 10_000))
         scenario.close()
     }
 }

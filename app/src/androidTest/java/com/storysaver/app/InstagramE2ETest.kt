@@ -51,13 +51,13 @@ class InstagramE2ETest {
         val found = resolver.query(
             MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
             arrayOf(MediaStore.MediaColumns.DISPLAY_NAME, MediaStore.MediaColumns.SIZE),
-            "${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?", arrayOf("StorySaver_IG_%"), null,
+            "${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?", arrayOf("ndtv_instagram_DeyQf_PzHlD%.mp4"), null,
         )?.use { c ->
             var ok = false
             while (c.moveToNext()) if (c.getLong(1) > 10_000) ok = true
             ok
         } ?: false
-        assertTrue("Saved reel not found in MediaStore", found)
+        assertTrue("Saved reel 'ndtv_instagram_DeyQf_PzHlD….mp4' not found in MediaStore", found)
 
         rule.onNodeWithText("Open").assertExists()
     }

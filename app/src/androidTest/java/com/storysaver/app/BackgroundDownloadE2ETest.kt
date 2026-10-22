@@ -19,7 +19,7 @@ class BackgroundDownloadE2ETest {
     @get:Rule val rule = createAndroidComposeRule<MainActivity>()
 
     @Test fun instagramDownloadFinishesAfterAppIsClosed() {
-        val before = MediaQueries.ids(MediaQueries.VIDEOS, "StorySaver_IG_")
+        val before = MediaQueries.ids(MediaQueries.VIDEOS, "%instagram%")
         rule.openSource("Video", "Instagram Story")
         rule.waitUntil(10_000) { rule.hasTag("ig_url") }
         rule.onNodeWithTag("ig_url").performTextInput("https://www.instagram.com/reel/DeyQf_PzHlD/?exln=bg")
@@ -31,7 +31,7 @@ class BackgroundDownloadE2ETest {
         Shots.take("60_background_started")
         rule.runOnUiThread { rule.activity.finish() } // leave the app immediately
 
-        val id = MediaQueries.waitForNew(MediaQueries.VIDEOS, "StorySaver_IG_", before, 180_000)
+        val id = MediaQueries.waitForNew(MediaQueries.VIDEOS, "%instagram%", before, 180_000)
         assertNotNull("video never appeared after the app was closed", id)
         val mimes = MediaQueries.trackMimes(MediaQueries.uri(MediaQueries.VIDEOS, id!!))
         assertTrue("tracks=$mimes", mimes.any { it.startsWith("video/") })

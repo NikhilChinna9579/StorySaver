@@ -106,6 +106,8 @@ class MediaSaver(private val context: Context, private val settings: SettingsRep
         source: Uri,
         mimeType: String,
         platform: Platform,
+        /** Readable name without extension (e.g. "ndtv_instagram_DeyQf_PzHlD"); null = generated. */
+        fileBase: String? = null,
         onProgress: (Float?) -> Unit = {},
     ): Outcome = withContext(Dispatchers.IO) {
         val type = kindOf(mimeType)
@@ -120,7 +122,7 @@ class MediaSaver(private val context: Context, private val settings: SettingsRep
                     "(${com.storysaver.app.util.formatBytes(sourceMeta.size)} needed)."
             )
         }
-        val name = FileNaming.generate(platform, mimeType, System.currentTimeMillis())
+        val name = FileNaming.readable(fileBase, platform, mimeType, System.currentTimeMillis())
 
         try {
             when {
@@ -336,6 +338,14 @@ class MediaSaver(private val context: Context, private val settings: SettingsRep
             else -> null
         }
     }
+
+    /** One system confirmation for deleting several gallery files (Android 11+). */
+    fun batchDeleteRequest(uris: List<Uri>): IntentSender? =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && uris.isNotEmpty()) {
+            runCatching { MediaStore.createDeleteRequest(resolver, uris).intentSender }.getOrNull()
+        } else {
+            null
+        }
 
     @RequiresApi(Build.VERSION_CODES.R)
     private fun deleteRequest(uri: Uri): DeleteOutcome =

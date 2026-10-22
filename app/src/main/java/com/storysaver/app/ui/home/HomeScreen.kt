@@ -54,7 +54,14 @@ fun HomeScreen(onContinue: (Platform, MediaType) -> Unit, modifier: Modifier = M
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(4.dp))
+        QuickLinkBox()
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "Or choose step by step",
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
 
         SectionLabel("1  ·  What do you want to save?")
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {

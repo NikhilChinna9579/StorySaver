@@ -13,6 +13,7 @@ import com.storysaver.app.instagram.InstagramExtractor
 import com.storysaver.app.model.MediaType
 import com.storysaver.app.model.Platform
 import com.storysaver.app.model.SavedMedia
+import com.storysaver.app.util.FileNaming
 import com.storysaver.app.util.MimeUtils
 import com.storysaver.app.youtube.Mp4Merger
 import com.storysaver.app.youtube.YouTubeExtractor
@@ -162,7 +163,8 @@ class QuickSaveViewModel(input: ShareInput, private val c: AppContainer) : ViewM
                     val audio = content.audioOnly && item.type == MediaType.VIDEO
                     val part = if (content.post.items.size > 1) " (${item.index + 1}/${content.post.items.size})" else ""
                     DownloadRequest.Direct(item.url, owner + part + if (audio) " · audio" else " · ${item.type.label.lowercase()}",
-                        Platform.INSTAGRAM, audio)
+                        Platform.INSTAGRAM, audio,
+                        FileNaming.instagramBase(content.post.owner, content.post.shortcode, item.index, content.post.items.size, audio))
                 }
                 startBackground(requests)
             }
@@ -173,6 +175,7 @@ class QuickSaveViewModel(input: ShareInput, private val c: AppContainer) : ViewM
                     videoUrl = q.video.url, audioUrl = q.audio?.url,
                     videoLength = q.video.contentLength, audioLength = q.audio?.contentLength ?: -1,
                     durationSeconds = content.video.durationSeconds, qualityLabel = q.label, audioOnly = q.audioOnly,
+                    fileBase = FileNaming.youtubeBase(content.video.title, content.video.channel, q.label, q.audioOnly),
                 )))
             }
             is QsContent.LocalFile -> saveLocal(content)
@@ -226,12 +229,13 @@ class QuickSaveViewModel(input: ShareInput, private val c: AppContainer) : ViewM
                 val audio = File(dir, "share_${System.nanoTime()}.m4a")
                 try {
                     withContext(Dispatchers.IO) { Mp4Merger.extractAudio(src, audio, 0) {} }
-                    c.saver.save(Uri.fromFile(audio), "audio/mp4", Platform.SHARED)
+                    c.saver.save(Uri.fromFile(audio), "audio/mp4", Platform.SHARED,
+                        FileNaming.sharedBase(f.name, System.currentTimeMillis()) + "_audio")
                 } finally {
                     audio.delete()
                 }
             } else {
-                c.saver.save(f.uri, f.mime, Platform.SHARED)
+                c.saver.save(f.uri, f.mime, Platform.SHARED, FileNaming.sharedBase(f.name, System.currentTimeMillis()))
             }
             when (outcome) {
                 is MediaSaver.Outcome.Saved -> {

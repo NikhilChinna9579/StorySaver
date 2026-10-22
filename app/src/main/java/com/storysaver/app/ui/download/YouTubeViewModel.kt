@@ -11,6 +11,7 @@ import com.storysaver.app.downloads.JobState
 import java.util.UUID
 import com.storysaver.app.model.Platform
 import com.storysaver.app.model.SavedMedia
+import com.storysaver.app.util.FileNaming
 import com.storysaver.app.util.Progress
 import com.storysaver.app.util.formatBytes
 import com.storysaver.app.youtube.ChunkedDownloader
@@ -144,6 +145,7 @@ class YouTubeViewModel(private val c: AppContainer) : ViewModel() {
             durationSeconds = video.durationSeconds,
             qualityLabel = q.label,
             audioOnly = q.audioOnly,
+            fileBase = FileNaming.youtubeBase(video.title, video.channel, q.label, q.audioOnly),
         )
         val id = c.jobs.enqueue(request)
         jobId = id

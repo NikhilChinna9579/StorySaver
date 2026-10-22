@@ -11,6 +11,8 @@ sealed interface DownloadRequest {
     val title: String
     val platform: Platform
     val audioOnly: Boolean
+    /** Readable file name without extension; null = generated. */
+    val fileBase: String?
 
     /** A single media file at a URL (Instagram items, direct CDN links). */
     data class Direct(
@@ -19,6 +21,7 @@ sealed interface DownloadRequest {
         override val platform: Platform,
         /** Save only the sound of a video, as .m4a. */
         override val audioOnly: Boolean = false,
+        override val fileBase: String? = null,
     ) : DownloadRequest
 
     /** A YouTube download: one stream, or video + audio streams to merge. */
@@ -32,6 +35,7 @@ sealed interface DownloadRequest {
         val qualityLabel: String,
         /** [videoUrl] is an audio stream saved as .m4a. */
         override val audioOnly: Boolean = false,
+        override val fileBase: String? = null,
     ) : DownloadRequest {
         override val platform: Platform get() = Platform.YOUTUBE
     }
@@ -40,11 +44,13 @@ sealed interface DownloadRequest {
         is Direct -> JSONObject()
             .put("kind", "direct").put("url", url).put("title", title)
             .put("platform", platform.name).put("audioOnly", audioOnly)
+            .put("fileBase", fileBase ?: JSONObject.NULL)
         is YouTube -> JSONObject()
             .put("kind", "youtube").put("title", title).put("videoUrl", videoUrl)
             .put("audioUrl", audioUrl ?: JSONObject.NULL)
             .put("videoLength", videoLength).put("audioLength", audioLength)
             .put("duration", durationSeconds).put("label", qualityLabel).put("audioOnly", audioOnly)
+            .put("fileBase", fileBase ?: JSONObject.NULL)
     }.toString()
 
     companion object {
@@ -56,6 +62,7 @@ sealed interface DownloadRequest {
                     title = o.optString("title", "Download"),
                     platform = runCatching { Platform.valueOf(o.getString("platform")) }.getOrDefault(Platform.SHARED),
                     audioOnly = o.optBoolean("audioOnly", false),
+                    fileBase = o.optStringOrNull("fileBase"),
                 )
                 "youtube" -> YouTube(
                     title = o.optString("title", "YouTube video"),
@@ -66,9 +73,12 @@ sealed interface DownloadRequest {
                     durationSeconds = o.optLong("duration", 0),
                     qualityLabel = o.optString("label", ""),
                     audioOnly = o.optBoolean("audioOnly", false),
+                    fileBase = o.optStringOrNull("fileBase"),
                 )
                 else -> null
             }
         }.getOrNull()
+
+        private fun JSONObject.optStringOrNull(key: String): String? = if (isNull(key)) null else optString(key)
     }
 }

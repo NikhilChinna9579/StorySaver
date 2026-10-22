@@ -37,7 +37,7 @@ class DownloadEngine(private val c: AppContainer) {
                 is DownloadRequest.YouTube -> youtube(request, dir, ::temp, progress)
             }
             progress("Saving", null)
-            return when (val out = c.saver.save(Uri.fromFile(file), mime, request.platform) { p -> progress("Saving", p) }) {
+            return when (val out = c.saver.save(Uri.fromFile(file), mime, request.platform, request.fileBase) { p -> progress("Saving", p) }) {
                 is MediaSaver.Outcome.Saved -> out.media.also { c.history.add(it) }
                 is MediaSaver.Outcome.Failed -> throw DownloadFailure(out.message)
                 MediaSaver.Outcome.NeedsStoragePermission ->

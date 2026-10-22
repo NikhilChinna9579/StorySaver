@@ -15,6 +15,7 @@ import com.storysaver.app.instagram.IgPost
 import com.storysaver.app.instagram.InstagramExtractor
 import com.storysaver.app.model.Platform
 import com.storysaver.app.model.SavedMedia
+import com.storysaver.app.util.FileNaming
 import com.storysaver.app.util.UrlCheck
 import com.storysaver.app.util.UrlValidator
 import com.storysaver.app.youtube.YouTubeLinks
@@ -179,7 +180,8 @@ class InstagramViewModel(private val c: AppContainer) : ViewModel() {
             val owner = found.post.owner?.let { "@$it" } ?: "Instagram"
             val part = if (found.items.size > 1) " (${index + 1}/${found.items.size})" else ""
             val title = owner + part + if (audioOnly) " · audio" else " · ${ui.item.type.label.lowercase()}"
-            val id = c.jobs.enqueue(DownloadRequest.Direct(ui.item.url, title, Platform.INSTAGRAM, audioOnly))
+            val fileBase = FileNaming.instagramBase(found.post.owner, found.post.shortcode, index, found.items.size, audioOnly)
+            val id = c.jobs.enqueue(DownloadRequest.Direct(ui.item.url, title, Platform.INSTAGRAM, audioOnly, fileBase))
             jobIds[index] = id
             setItem(index, IgItemState.Downloading(null))
             viewModelScope.launch {

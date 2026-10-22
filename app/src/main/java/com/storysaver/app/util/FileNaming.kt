@@ -40,6 +40,76 @@ object FileNaming {
         return cleaned.ifEmpty { "media" }
     }
 
+    // ---------------- Readable names ----------------
+
+    private const val MAX_CHARS = 100
+    private const val MAX_BYTES = 180 // filesystem limit is 255 bytes; leave room for " (12).ext"
+
+    /**
+     * Makes a human title safe as a file name while keeping it readable: keeps letters in any
+     * language, removes characters Android/FAT file systems reject (/ \ : * ? " < > |), control
+     * characters and emoji, collapses spaces, and caps the length (in UTF-8 bytes too).
+     */
+    fun cleanTitle(raw: String): String {
+        val sb = StringBuilder()
+        var i = 0
+        while (i < raw.length) {
+            val cp = raw.codePointAt(i)
+            i += Character.charCount(cp)
+            when {
+                cp in ILLEGAL -> sb.append(' ')
+                Character.isISOControl(cp) -> sb.append(' ')
+                cp > 0xFFFF -> {} // emoji and other astral symbols
+                Character.getType(cp) == Character.OTHER_SYMBOL.toInt() && cp >= 0x2190 -> {} // dingbats, arrows, ✨
+                cp == 0xFE0F || cp == 0x200D -> {} // emoji presentation / joiner
+                else -> sb.appendCodePoint(cp)
+            }
+        }
+        var t = sb.toString().replace(Regex("\\s+"), " ").trim().trim('.', ' ', '-', '_')
+        if (t.length > MAX_CHARS) t = t.take(MAX_CHARS).trimEnd()
+        while (t.toByteArray(Charsets.UTF_8).size > MAX_BYTES) t = t.dropLast(1)
+        return t.trimEnd('.', ' ', '-', '_')
+    }
+
+    private val ILLEGAL = setOf('/', '\\', ':', '*', '?', '"', '<', '>', '|').map { it.code }.toSet()
+
+    /** "base" + extension for [mime]; falls back to a generated name when the base is blank. */
+    fun readable(base: String?, platform: Platform, mime: String, timestampMillis: Long): String {
+        val clean = base?.let { cleanTitle(it) }.orEmpty()
+        return if (clean.isEmpty()) generate(platform, mime, timestampMillis) else "$clean.${MimeUtils.extensionForMime(mime)}"
+    }
+
+    /** e.g. "ndtv_instagram_DeyQf_PzHlD", "ndtv_instagram_C9xYz_2_audio". */
+    fun instagramBase(owner: String?, shortcode: String?, index: Int, count: Int, audio: Boolean): String =
+        listOfNotNull(
+            owner?.takeIf { it.isNotBlank() },
+            "instagram",
+            shortcode?.takeIf { it.isNotBlank() },
+            (index + 1).takeIf { count > 1 }?.toString(),
+            "audio".takeIf { audio },
+        ).joinToString("_")
+
+    /** e.g. "Me at the zoo - jawed (360p)"; audio: "Me at the zoo - jawed". */
+    fun youtubeBase(title: String, channel: String?, quality: String?, audio: Boolean): String = buildString {
+        append(title.ifBlank { "YouTube video" })
+        if (!channel.isNullOrBlank() && !title.contains(channel, ignoreCase = true)) append(" - ").append(channel)
+        if (!audio && !quality.isNullOrBlank()) append(" (").append(quality).append(')')
+    }
+
+    /** e.g. "WhatsApp_status_2026-10-22_14-03-11" (when the status was posted/received). */
+    fun whatsappBase(statusTimeMillis: Long, timeZone: TimeZone = TimeZone.getDefault()): String {
+        val fmt = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).apply { this.timeZone = timeZone }
+        return "WhatsApp_status_" + fmt.format(Date(statusTimeMillis))
+    }
+
+    /** A shared file keeps its own name (without extension) when it has a meaningful one. */
+    fun sharedBase(originalName: String?, timestampMillis: Long, timeZone: TimeZone = TimeZone.getDefault()): String {
+        val stem = originalName?.substringBeforeLast('.')?.takeIf { it.isNotBlank() && !it.matches(Regex("[0-9a-fA-F_-]{12,}")) }
+        if (stem != null) return stem
+        val fmt = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).apply { this.timeZone = timeZone }
+        return "Shared_" + fmt.format(Date(timestampMillis))
+    }
+
     /**
      * Returns [name] if it is free, otherwise "base (1).ext", "base (2).ext", …
      * [exists] is injected so this works for java.io.File and for tests.

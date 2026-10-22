@@ -82,7 +82,7 @@ class YouTubeE2ETest {
         val resolver = InstrumentationRegistry.getInstrumentation().targetContext.contentResolver
         return resolver.query(
             MediaStore.Video.Media.EXTERNAL_CONTENT_URI, arrayOf(MediaStore.MediaColumns._ID),
-            "${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?", arrayOf("StorySaver_YT_%"), null,
+            "${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?", arrayOf("Me at the zoo%"), null,
         )?.use { c -> buildSet { while (c.moveToNext()) add(c.getLong(0)) } } ?: emptySet()
     }
 

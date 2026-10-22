@@ -104,3 +104,19 @@ Navigation 2.8.5, Lifecycle 2.8.7, OkHttp 4.12.0, Coil 2.7.0. Android Studio may
 - [ ] Custom folder in Settings: saves land there
 - [ ] Downloads: Open, Share, Delete; deleting from Gallery outside the app removes the entry on return
 - [ ] Airplane mode during an Instagram download → clear network error, no file left behind
+
+## App signing (keep the key private)
+
+Release APKs are signed by GitHub Actions with a key stored in **encrypted repository secrets** —
+the key is never committed. Required secrets (Settings → Secrets and variables → Actions):
+
+| Secret | Value |
+|---|---|
+| `SIGNING_KEYSTORE_BASE64` | the keystore file, base64-encoded (one line) |
+| `SIGNING_STORE_PASSWORD` | keystore password |
+| `SIGNING_KEY_ALIAS` | key alias |
+| `SIGNING_KEY_PASSWORD` | key password |
+
+The build refuses to publish an APK that isn't signed with the expected certificate
+(SHA-256 fingerprint checked in `.github/workflows/build-apk.yml`). Keep a private backup of the
+keystore: without it, new versions can't be installed as updates over old ones.

@@ -12,6 +12,7 @@ import com.storysaver.app.data.UriInfo
 import com.storysaver.app.model.MediaType
 import com.storysaver.app.model.Platform
 import com.storysaver.app.model.SavedMedia
+import com.storysaver.app.util.FileNaming
 import com.storysaver.app.util.MimeUtils
 import com.storysaver.app.util.UrlValidator
 import kotlinx.coroutines.Dispatchers
@@ -195,7 +196,10 @@ class LocalSaveViewModel(
         saveJob?.cancel()
         saveJob = viewModelScope.launch {
             _state.update { it.copy(saving = true, progress = null, error = null) }
-            val outcome = c.saver.save(item.uri, item.mimeType, _state.value.platform) { p ->
+            val platform = _state.value.platform
+            val fileBase = if (platform == Platform.WHATSAPP) FileNaming.whatsappBase(item.modified)
+                else FileNaming.sharedBase(item.name, System.currentTimeMillis())
+            val outcome = c.saver.save(item.uri, item.mimeType, platform, fileBase) { p ->
                 _state.update { it.copy(progress = p) }
             }
             when (outcome) {

@@ -43,6 +43,7 @@ import com.storysaver.app.ui.download.YouTubeViewModel
 import com.storysaver.app.youtube.YouTubeLinks
 import com.storysaver.app.ui.downloads.DownloadsScreen
 import com.storysaver.app.ui.downloads.DownloadsViewModel
+import com.storysaver.app.ui.downloads.ViewerScreen
 import com.storysaver.app.ui.home.HomeScreen
 import com.storysaver.app.ui.settings.SettingsScreen
 import com.storysaver.app.util.MimeUtils
@@ -55,6 +56,8 @@ private object Routes {
     const val SETTINGS = "settings"
     const val SHARED = "shared"
     const val SOURCE = "source/{platform}/{type}"
+    const val VIEWER = "viewer/{id}"
+    fun viewer(id: String) = "viewer/$id"
     fun source(platform: Platform, type: MediaType) = "source/${platform.name}/${type.name}"
 }
 
@@ -116,7 +119,7 @@ fun StorySaverNavHost(container: AppContainer) {
             }
             composable(Routes.DOWNLOADS) {
                 val vm: DownloadsViewModel = viewModel(factory = viewModelFactory { initializer { DownloadsViewModel(container) } })
-                DownloadsScreen(vm, modifier = Modifier.padding(outer))
+                DownloadsScreen(vm, onOpen = { m -> nav.navigate(Routes.viewer(m.id)) }, modifier = Modifier.padding(outer))
             }
             composable(Routes.SETTINGS) {
                 SettingsScreen(container, modifier = Modifier.padding(outer))
@@ -152,6 +155,11 @@ fun StorySaverNavHost(container: AppContainer) {
                         WhatsAppScreen(vm, container.statuses, onBack = { nav.popBackStack() })
                     }
                 }
+            }
+            composable(Routes.VIEWER, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
+                val id = entry.arguments?.getString("id")
+                val items by container.history.items.collectAsStateWithLifecycle()
+                ViewerScreen(items.firstOrNull { it.id == id }, onBack = { nav.popBackStack() })
             }
             composable(Routes.SHARED) {
                 val vm: LocalSaveViewModel = viewModel(factory = viewModelFactory {

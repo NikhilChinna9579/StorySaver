@@ -38,7 +38,7 @@ adb shell mkdir -p "$FX"
 adb push fixtures/yt-video.mp4 "$FX/yt-video.mp4"
 adb push fixtures/yt-audio.m4a "$FX/yt-audio.m4a"
 adb logcat -c
-for cls in SmokeTest Mp4MergerTest WhatsAppE2ETest InstagramE2ETest BackgroundDownloadE2ETest ShareSheetE2ETest YouTubeE2ETest; do
+for cls in SmokeTest Mp4MergerTest WhatsAppE2ETest InstagramE2ETest BackgroundDownloadE2ETest ShareSheetE2ETest HomeQuickLinkE2ETest YouTubeE2ETest DownloadsTabE2ETest; do
   echo "=== $cls" >> "$OUT/instrument.txt"
   adb shell am instrument -w -e class "$PKG.$cls" "$PKG.test/androidx.test.runner.AndroidJUnitRunner" >> "$OUT/instrument.txt" 2>&1
 done
@@ -60,7 +60,7 @@ adb exec-out screencap -p > "$OUT/30_share_link_flow.png"
 # access to files it doesn't own; real apps (Gallery, WhatsApp) grant it themselves.
 adb shell am force-stop "$PKG"
 ID=$(adb shell content query --uri content://media/external/video/media --projection _id:_display_name \
-     | grep StorySaver_IG | sed -n 's/.*_id=\([0-9]*\).*/\1/p' | head -1)
+     | grep instagram | sed -n 's/.*_id=\([0-9]*\).*/\1/p' | head -1)
 echo "shared video id: $ID" >> "$OUT/instrument.txt"
 if [ -n "$ID" ]; then
   adb shell am start -a android.intent.action.SEND -t video/mp4 \
