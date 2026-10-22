@@ -11,6 +11,10 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // NewPipeExtractor (YouTube) and its nanojson dependency are published on JitPack only.
+        maven("https://jitpack.io") {
+            content { includeGroupByRegex("com\\.github\\.(?i)teamnewpipe.*") }
+        }
     }
 }
 

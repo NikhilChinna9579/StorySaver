@@ -38,6 +38,9 @@ import com.storysaver.app.ui.download.InstagramViewModel
 import com.storysaver.app.ui.download.LocalSaveViewModel
 import com.storysaver.app.ui.download.SharedMediaScreen
 import com.storysaver.app.ui.download.WhatsAppScreen
+import com.storysaver.app.ui.download.YouTubeScreen
+import com.storysaver.app.ui.download.YouTubeViewModel
+import com.storysaver.app.youtube.YouTubeLinks
 import com.storysaver.app.ui.downloads.DownloadsScreen
 import com.storysaver.app.ui.downloads.DownloadsViewModel
 import com.storysaver.app.ui.home.HomeScreen
@@ -74,8 +77,12 @@ fun StorySaverNavHost(container: AppContainer) {
     LaunchedEffect(pending) {
         when (val item = pending) {
             is SharedItem.Text -> {
-                val type = (UrlValidator.check(item.text) as? UrlCheck.DirectMedia)?.guessedType ?: MediaType.IMAGE
-                nav.navigate(Routes.source(Platform.INSTAGRAM, type))
+                if (YouTubeLinks.parse(item.text) != null) {
+                    nav.navigate(Routes.source(Platform.YOUTUBE, MediaType.VIDEO))
+                } else {
+                    val type = (UrlValidator.check(item.text) as? UrlCheck.DirectMedia)?.guessedType ?: MediaType.IMAGE
+                    nav.navigate(Routes.source(Platform.INSTAGRAM, type))
+                }
             }
             is SharedItem.Media -> nav.navigate(Routes.SHARED)
             null -> Unit
@@ -126,6 +133,12 @@ fun StorySaverNavHost(container: AppContainer) {
                 val type = runCatching { MediaType.valueOf(entry.arguments?.getString("type").orEmpty()) }
                     .getOrDefault(MediaType.IMAGE)
                 when (platform) {
+                    Platform.YOUTUBE -> {
+                        val vm: YouTubeViewModel = viewModel(factory = viewModelFactory {
+                            initializer { YouTubeViewModel(container) }
+                        })
+                        YouTubeScreen(vm, onBack = { nav.popBackStack() })
+                    }
                     Platform.INSTAGRAM -> {
                         val vm: InstagramViewModel = viewModel(factory = viewModelFactory {
                             initializer { InstagramViewModel(container) }

@@ -14,6 +14,7 @@ import com.storysaver.app.model.Platform
 import com.storysaver.app.model.SavedMedia
 import com.storysaver.app.util.UrlCheck
 import com.storysaver.app.util.UrlValidator
+import com.storysaver.app.youtube.YouTubeLinks
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -96,6 +97,13 @@ class InstagramViewModel(private val c: AppContainer) : ViewModel() {
                 return
             }
             UrlCheck.NotInstagram -> {
+                if (YouTubeLinks.parse(_state.value.url) != null) {
+                    _state.update {
+                        it.copy(phase = IgPhase.Idle,
+                            error = "That's a YouTube link. Go back, choose Video, then YouTube, and paste it there.")
+                    }
+                    return
+                }
                 _state.update {
                     it.copy(phase = IgPhase.Idle,
                         error = "This isn't an Instagram link. In Instagram, open the reel or post, tap Share → Copy link, and paste it here.")

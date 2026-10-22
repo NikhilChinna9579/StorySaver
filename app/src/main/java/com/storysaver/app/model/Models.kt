@@ -8,6 +8,7 @@ enum class MediaType(val label: String) {
 enum class Platform(val label: String, val tag: String) {
     WHATSAPP("WhatsApp Status", "WA"),
     INSTAGRAM("Instagram Story", "IG"),
+    YOUTUBE("YouTube", "YT"),
     SHARED("Shared media", "SHARE");
 }
 

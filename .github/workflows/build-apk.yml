@@ -47,6 +47,19 @@ jobs:
           fi
           exit ${status:-0}
 
+      - name: Live YouTube check (real network)
+        continue-on-error: true
+        env:
+          LIVE_YOUTUBE: "1"
+        run: |
+          ./gradlew testDebugUnitTest --tests '*YouTubeLiveTest*' --rerun-tasks -q || status=$?
+          if [ -f app/build/live-youtube.txt ]; then
+            while IFS= read -r line; do echo "::notice title=live-youtube::$line"; done < app/build/live-youtube.txt
+          else
+            echo "::notice title=live-youtube::no report written"
+          fi
+          exit ${status:-0}
+
       - name: Publish APK to the "latest" release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

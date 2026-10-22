@@ -197,7 +197,7 @@ fun WhatsAppScreen(vm: LocalSaveViewModel, statuses: StatusRepository, onBack: (
                             BannerKind.INFO,
                             "No ${state.mediaType.label.lowercase()} statuses found",
                             "WhatsApp only saves a status to this folder after it has downloaded it on your phone, and removes it after about 24 hours. " +
-                                "Video statuses are often only downloaded once you play them to the end. " +
+                                "A video status you only played partway isn't saved yet — play it to the end. " +
                                 "Open WhatsApp, view the status fully, then come back — the list updates automatically.\n\n" +
                                 "If you chose the wrong folder, tap Change and select the “WhatsApp” folder " +
                                 "(Android › media › com.whatsapp › WhatsApp on most phones). Tap Details to see which folders were read.",
@@ -251,8 +251,11 @@ private fun ScanDetailsDialog(folders: List<String>, skipped: List<String>, onDi
                 Text("Skipped files (${skipped.size}):", fontWeight = FontWeight.SemiBold)
                 Text(if (skipped.isEmpty()) "None" else skipped.take(200).joinToString("\n") { "• $it" })
                 Text(
-                    "WhatsApp only puts a status in these folders once it has downloaded it. If a status you " +
-                        "watched isn't here, play it fully in WhatsApp (videos often download only when played).",
+                    "WhatsApp only puts a status in these folders once the whole file is downloaded. A video you " +
+                        "stopped halfway is still being held inside WhatsApp, where no other app can read it — " +
+                        "play it to the end and it appears here.\n\nTip: in WhatsApp → Settings → Storage and data → " +
+                        "Media auto-download, turn on Videos (for Wi-Fi). WhatsApp may then download video statuses " +
+                        "in full without you playing them.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

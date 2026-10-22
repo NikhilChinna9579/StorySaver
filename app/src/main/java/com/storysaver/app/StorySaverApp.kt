@@ -12,6 +12,8 @@ import com.storysaver.app.data.SettingsRepository
 import com.storysaver.app.data.ShareInbox
 import com.storysaver.app.data.StatusRepository
 import com.storysaver.app.instagram.InstagramExtractor
+import com.storysaver.app.youtube.ChunkedDownloader
+import com.storysaver.app.youtube.YouTubeExtractor
 import okhttp3.OkHttpClient
 import java.io.File
 import java.util.concurrent.TimeUnit
@@ -25,6 +27,7 @@ class StorySaverApp : Application(), ImageLoaderFactory {
         super.onCreate()
         container = AppContainer(this)
         container.downloader.clearCache()
+        container.youtubeCacheDir.deleteRecursively()
     }
 
     /** Coil loader that can also draw a frame from videos for thumbnails. */
@@ -55,6 +58,13 @@ class AppContainer(context: Context) {
 
     val downloader = DirectMediaDownloader(httpClient, File(app.cacheDir, "downloads"))
     val instagram = InstagramExtractor(httpClient)
+    val youtube = YouTubeExtractor(httpClient)
+
+    /** Long media downloads: generous read timeout, chunked by [ChunkedDownloader]. */
+    val chunkedDownloader = ChunkedDownloader(
+        httpClient.newBuilder().readTimeout(60, TimeUnit.SECONDS).build()
+    )
+    val youtubeCacheDir = File(app.cacheDir, "youtube")
 }
 
 val Context.appContainer: AppContainer

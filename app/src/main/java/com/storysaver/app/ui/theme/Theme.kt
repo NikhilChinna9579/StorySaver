@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.dp
 object Accents {
     val WhatsApp = Color(0xFF1FA463)
     val Instagram = Color(0xFFD6336C)
+    val YouTube = Color(0xFFE53935)
     val Success = Color(0xFF1B8A4B)
 }
 

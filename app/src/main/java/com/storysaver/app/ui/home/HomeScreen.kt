@@ -14,6 +14,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Forum
 import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.OndemandVideo
 import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material.icons.outlined.Videocam
 import androidx.compose.material3.Button
@@ -60,7 +61,10 @@ fun HomeScreen(onContinue: (Platform, MediaType) -> Unit, modifier: Modifier = M
             SelectableCard(
                 title = "Image", subtitle = "Photos & pictures", icon = Icons.Outlined.Image,
                 selected = mediaType == MediaType.IMAGE, accent = primary,
-                onClick = { mediaType = MediaType.IMAGE }, modifier = Modifier.weight(1f),
+                onClick = {
+                    mediaType = MediaType.IMAGE
+                    if (platform == Platform.YOUTUBE) platform = null // YouTube is video-only
+                }, modifier = Modifier.weight(1f),
             )
             SelectableCard(
                 title = "Video", subtitle = "Clips & recordings", icon = Icons.Outlined.Videocam,
@@ -81,6 +85,19 @@ fun HomeScreen(onContinue: (Platform, MediaType) -> Unit, modifier: Modifier = M
                 title = "Instagram Story", subtitle = "Paste a reel or post link", icon = Icons.Outlined.PhotoCamera,
                 selected = platform == Platform.INSTAGRAM, accent = Accents.Instagram,
                 onClick = { platform = Platform.INSTAGRAM }, modifier = Modifier.weight(1f),
+            )
+        }
+        if (mediaType == MediaType.VIDEO) {
+            SelectableCard(
+                title = "YouTube", subtitle = "Paste a video link and pick a resolution", icon = Icons.Outlined.OndemandVideo,
+                selected = platform == Platform.YOUTUBE, accent = Accents.YouTube,
+                onClick = { platform = Platform.YOUTUBE }, modifier = Modifier.fillMaxWidth(),
+            )
+        } else {
+            Text(
+                "Choose Video to also download from YouTube.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
 
