@@ -16,8 +16,24 @@ android {
         versionName = "1.0.0"
     }
 
+    // One fixed signing key committed with the project, so every build (including GitHub's)
+    // is signed the same way and new APKs install as updates over old ones.
+    // Fine for a personally shared app; use a private key if you ever publish to the Play Store.
+    signingConfigs {
+        create("shared") {
+            storeFile = file("storysaver-signing.jks")
+            storePassword = "storysaver"
+            keyAlias = "storysaver"
+            keyPassword = "storysaver"
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("shared")
+        }
         release {
+            signingConfig = signingConfigs.getByName("shared")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
