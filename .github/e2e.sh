@@ -32,8 +32,13 @@ adb shell ls -laR "$WA" > "$OUT/fake-whatsapp-tree.txt" 2>&1
 # ---- Install and run instrumentation tests ----
 adb install -r -g app/build/outputs/apk/debug/app-debug.apk
 adb install -r -g app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+# Fixtures for the on-device merge test
+FX=/sdcard/Android/data/$PKG/files/fixtures
+adb shell mkdir -p "$FX"
+adb push fixtures/yt-video.mp4 "$FX/yt-video.mp4"
+adb push fixtures/yt-audio.m4a "$FX/yt-audio.m4a"
 adb logcat -c
-for cls in SmokeTest WhatsAppE2ETest InstagramE2ETest; do
+for cls in SmokeTest Mp4MergerTest WhatsAppE2ETest InstagramE2ETest YouTubeE2ETest; do
   echo "=== $cls" >> "$OUT/instrument.txt"
   adb shell am instrument -w -e class "$PKG.$cls" "$PKG.test/androidx.test.runner.AndroidJUnitRunner" >> "$OUT/instrument.txt" 2>&1
 done

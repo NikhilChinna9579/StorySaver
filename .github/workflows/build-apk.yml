@@ -104,6 +104,11 @@ jobs:
           for i in 1 2 3 4; do
             ffmpeg -loglevel error -f lavfi -i "testsrc=duration=2:size=480x854:rate=15" -pix_fmt yuv420p -y fixtures/vid$i.mp4
           done
+          # YouTube-style split streams (fragmented MP4, H.264 video-only + AAC audio-only) for the merge test
+          FRAG="+frag_keyframe+empty_moov+default_base_moof"
+          ffmpeg -loglevel error -f lavfi -i "testsrc=duration=6:size=640x360:rate=30" -c:v libx264 -pix_fmt yuv420p -an -movflags $FRAG -y fixtures/yt-video.mp4
+          ffmpeg -loglevel error -f lavfi -i "sine=frequency=440:duration=6" -c:a aac -b:a 128k -vn -movflags $FRAG -y fixtures/yt-audio.m4a
+          ls -la fixtures
 
       - name: Run on emulator
         uses: reactivecircus/android-emulator-runner@v2
@@ -123,9 +128,17 @@ jobs:
         run: |
           shopt -s nullglob
           mkdir -p e2e-out
-          [ -f e2e-out/instrument.txt ] && while IFS= read -r line; do echo "::notice title=e2e::$line"; done < <(grep -E "^(OK|FAILURES|Tests run|There w|[0-9]+\) |com\.storysaver|java\.lang|junit|AssertionError|Expected)" e2e-out/instrument.txt | head -40)
-          [ -f e2e-out/files.txt ] && while IFS= read -r line; do echo "::notice title=e2e-files::$line"; done < e2e-out/files.txt
+          # GitHub shows at most 10 notices per step: keep them to per-class results + first errors.
+          [ -f e2e-out/instrument.txt ] && grep -E "^(=== |OK \(|Tests run|[0-9]+\) )|AssertionError|Exception:" e2e-out/instrument.txt \
+            | grep -v "^\s*at " | head -9 | paste -sd ' ' | sed 's/^/::notice title=e2e::/'
+          [ -f e2e-out/files.txt ] && grep -o "StorySaver_[A-Z]*_[^ ]*" e2e-out/files.txt | paste -sd ' ' | sed 's/^/::notice title=e2e-files::/'
           cd e2e-out && zip -qr ../e2e-report.zip . && cd ..
           gh release delete test-report --yes --cleanup-tag || true
-          gh release create test-report e2e-report.zip e2e-out/*.png e2e-out/*.txt --prerelease \
-            --title "Emulator test report" --notes "Screenshots and logs from the emulator test run of ${GITHUB_SHA::7}." || true
+          sleep 8
+          for i in 1 2 3; do
+            if gh release create test-report e2e-report.zip e2e-out/*.png e2e-out/*.txt --prerelease \
+                 --title "Emulator test report" --notes "Screenshots and logs from the emulator test run of ${GITHUB_SHA::7}."; then
+              break
+            fi
+            sleep 10
+          done
