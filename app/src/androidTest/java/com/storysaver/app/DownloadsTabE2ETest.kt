@@ -13,7 +13,8 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.longClick
-import androidx.test.espresso.Espresso
+import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.uiautomator.UiDevice
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -85,7 +86,7 @@ class DownloadsTabE2ETest {
         rule.onAllNodesWithTag("dl_row").onFirst().performClick()
         rule.waitUntil(10_000) { rule.hasTag("viewer_player") }
         Shots.take("84_viewer_video")
-        Espresso.pressBack()
+        UiDevice.getInstance(InstrumentationRegistry.getInstrumentation()).pressBack()
         rule.waitUntil(10_000) { rule.hasTag("dl_summary") }
 
         rule.onNodeWithTag("dl_type_IMAGE").performClick()
@@ -93,7 +94,7 @@ class DownloadsTabE2ETest {
         rule.onAllNodesWithTag("dl_row").onFirst().performClick()
         rule.waitUntil(10_000) { rule.hasTag("viewer_image") }
         Shots.take("85_viewer_image")
-        Espresso.pressBack()
+        UiDevice.getInstance(InstrumentationRegistry.getInstrumentation()).pressBack()
         rule.waitUntil(10_000) { rule.hasTag("dl_summary") }
         rule.onNodeWithTag("dl_type_ALL").performClick()
     }

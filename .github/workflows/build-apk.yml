@@ -28,7 +28,11 @@ jobs:
       - name: Unit tests
         run: |
           chmod +x gradlew
-          ./gradlew testDebugUnitTest
+          set -o pipefail
+          ./gradlew testDebugUnitTest 2>&1 | tee unit.log || {
+            grep -E "^e: |FAILED$|Exception" unit.log | head -15 | sed 's/^/::error::/'
+            exit 1
+          }
 
       - name: Live Instagram check (real network)
         continue-on-error: true
@@ -113,7 +117,11 @@ jobs:
       - name: Build app and test APKs
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug assembleDebugAndroidTest
+          set -o pipefail
+          ./gradlew assembleDebug assembleDebugAndroidTest 2>&1 | tee build.log || {
+            grep -E "^e: " build.log | head -15 | sed 's/^/::error::/'
+            exit 1
+          }
 
       - name: Make test media (fake WhatsApp statuses)
         run: |
