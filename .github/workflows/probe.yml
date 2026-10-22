@@ -1,0 +1,10 @@
+name: Instagram probe (temporary)
+on:
+  push:
+    branches: [probe]
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - run: python3 tools/ig_probe.py
