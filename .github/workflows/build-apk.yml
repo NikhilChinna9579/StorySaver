@@ -169,16 +169,20 @@ jobs:
           shopt -s nullglob
           mkdir -p e2e-out
           # GitHub shows at most 10 notices per step: keep them to per-class results + first errors.
-          [ -f e2e-out/instrument.txt ] && grep -E "^(=== |OK \(|Tests run|[0-9]+\) )|AssertionError|Exception:" e2e-out/instrument.txt \
-            | grep -v "^\s*at " | head -9 | paste -sd ' ' | sed 's/^/::notice title=e2e::/'
+          [ -f e2e-out/instrument.txt ] && grep -E "^(=== |OK \(|Tests run)" e2e-out/instrument.txt \
+            | paste -sd ' ' | sed 's/^/::notice title=e2e::/'
+          # Each failing test (name + first line of its error) as an error annotation, readable without logs.
+          [ -f e2e-out/instrument.txt ] && grep -A1 -E "^[0-9]+\) " e2e-out/instrument.txt | grep -v "^--$" | paste -d' ' - - \
+            | head -10 | cut -c1-900 | sed 's/^/::error title=e2e-failure::/'
           [ -f e2e-out/files.txt ] && grep -E "\.(mp4|jpe?g|png|m4a)$" e2e-out/files.txt | sed -E 's/^.* [0-9]{2}:[0-9]{2} //' | paste -sd '|' | sed 's/^/::notice title=e2e-files::/'
           cd e2e-out && zip -qr ../e2e-report.zip . && cd ..
           gh release delete test-report --yes --cleanup-tag || true
           sleep 8
-          for i in 1 2 3; do
+          for i in 1 2 3 4 5; do
             if gh release create test-report e2e-report.zip e2e-out/*.png e2e-out/*.txt --prerelease \
                  --title "Emulator test report" --notes "Screenshots and logs from the emulator test run of ${GITHUB_SHA::7}."; then
               break
             fi
-            sleep 10
+            echo "::warning::creating the test-report release failed (attempt $i)"
+            sleep 15
           done
